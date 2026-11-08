@@ -11,6 +11,7 @@ from ..contracts import positive_integer, finite_scalar, spectral_array
 class RegionalCorrelationConfig:
     channel_count: int = 4
     frequency_bin_count: int = 513
+    sample_rate_hz: int = 16000
     energy_bins: tuple = (10, 200)
     rear_energy_stop_bin: int = 200
     steering_bins: tuple = (20, 120)
@@ -27,6 +28,7 @@ class RegionalCorrelationConfig:
     def __post_init__(self):
         positive_integer(self.channel_count, 'channel_count')
         positive_integer(self.frequency_bin_count, 'frequency_bin_count')
+        positive_integer(self.sample_rate_hz, 'sample_rate_hz')
         for band in (self.energy_bins, self.steering_bins, self.correlation_bins):
             if not 0 <= band[0] < band[1] <= self.frequency_bin_count:
                 raise ValueError('frequency intervals must fit inside the spectrum')
@@ -48,7 +50,7 @@ class RegionalCorrelationEstimator:
                               config.scan_extent_meters+config.scan_step_meters/2,
                               config.scan_step_meters)
         start, stop = config.steering_bins
-        angular_frequency = 2*np.pi*np.arange(start+1, stop+1)/(config.frequency_bin_count-1)*8000
+        angular_frequency = 2*np.pi*np.arange(start, stop)/(config.frequency_bin_count-1)*(config.sample_rate_hz/2)
         self.steering_weights = np.exp(-1j*angular_frequency[:, None]*distances[None, :]/340)
         self.reset()
 
