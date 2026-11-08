@@ -66,6 +66,8 @@ class RegionalCorrelationEstimator:
         scores = np.zeros_like(self.pair_scores)
         for first in range(config.channel_count-1):
             for second in range(first+1, config.channel_count):
+                if not np.any(raw[:, :, first]) and not np.any(raw[:, :, second]):
+                    continue
                 denominator = np.mean(np.abs(raw[:, :, first])*np.abs(raw[:, :, second]), axis=1)
                 correlation = np.divide(np.mean(raw[:, :, first]*raw[:, :, second].conj(), axis=1),
                                         denominator, out=np.zeros_like(denominator, dtype=complex), where=denominator>0)
