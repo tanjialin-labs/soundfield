@@ -6,6 +6,7 @@ from .partitioned_filter import PartitionedEchoFilter, EchoSpectrumResult
 from .echo_refinement import CovarianceEchoRefiner, EchoRefinementConfig
 from .delay_estimation import CorrelationDelayEstimator, CorrelationDelayConfig, estimate_filter_delay
 from .audio_output import EchoAudioSynthesizer
+from .playback_output import PlaybackOutputController
 from .residual_postfilter import ResidualEchoPostfilter, ResidualEchoConfig, ResidualLevelDetector
 from .noise_tracking import EchoNoiseConfig
 from .communication_postfilter import CommunicationEchoPostfilter, CommunicationPostfilterConfig, SpectralEchoPostfilter
@@ -21,4 +22,4 @@ __all__ = ['EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivity
            'ResidualLevelDetector', 'EchoNoiseConfig', 'CommunicationEchoPostfilter', 'CommunicationPostfilterConfig',
            'SpectralEchoPostfilter', 'AcousticEchoCanceller', 'EchoCancellationConfig', 'EchoAudioResult',
            'cancel_echo', 'IterativeEchoCanceller', 'IterativeEchoConfig', 'PlaybackAdaptiveEchoFilter',
-           'PlaybackEchoConfig', 'PlaybackEchoResult', 'PlaybackResidualSuppressor', 'PlaybackPostfilterConfig']
+           'PlaybackEchoConfig', 'PlaybackEchoResult', 'PlaybackOutputController', 'PlaybackResidualSuppressor', 'PlaybackPostfilterConfig']
