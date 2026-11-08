@@ -94,9 +94,9 @@ class RegionalCorrelationEstimator:
                     temporal[:exclusion] = 0
                     temporal[-exclusion-1:] = 0
                     position = int(np.argmax(temporal))+1
-                    backward, forward = len(temporal)-position, position-1
+                    backward, forward = (len(temporal)-position+1) % len(temporal), position-1
                     score = (min(backward, config.lag_limits_samples[0]) if backward < forward
-                             else -min(forward, config.lag_limits_samples[1]))*0.0213/config.scan_step_meters
+                             else -min(forward, config.lag_limits_samples[1]))*340/config.sample_rate_hz/config.scan_step_meters
                 scores[first, second], scores[second, first] = score, -score
         self.pair_scores = scores
         return scores.copy(), int(np.argmax(scores.sum(axis=1)))
