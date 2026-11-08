@@ -39,3 +39,7 @@ __all__ += ['CoupledEchoCanceller', 'CoupledEchoConfig', 'CoupledEchoResult']
 from .playback_spectrum import PlaybackSpectrumAnalyzer, PlaybackSpectrumConfig, PlaybackSpectrumResult
 
 __all__ += ['PlaybackSpectrumAnalyzer', 'PlaybackSpectrumConfig', 'PlaybackSpectrumResult']
+
+from .streaming_cancellation import EchoCancellationStream, TimedEchoAudio
+
+__all__ += ['EchoCancellationStream', 'TimedEchoAudio']
