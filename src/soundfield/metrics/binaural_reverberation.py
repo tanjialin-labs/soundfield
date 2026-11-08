@@ -127,13 +127,15 @@ def _cancel_reference(microphones, references, config):
         coefficients = np.fft.rfft(partitions, n=512, axis=0).reshape(257, 16 * count)
         history = np.zeros_like(coefficients)
         frame = np.zeros((512, count))
-        for start in range(0, len(microphones) - 255, 256):
+        for start in range(0, len(microphones), 256):
+            length = min(256, len(microphones) - start)
             frame[:256] = frame[256:]
-            frame[256:] = references[start:start + 256]
+            frame[256:] = 0
+            frame[256:256 + length] = references[start:start + length]
             history[:, count:] = history[:, :-count]
             history[:, :count] = np.fft.rfft(frame, axis=0)
             prediction = np.fft.irfft(np.sum(history * coefficients, axis=1), n=512)[256:]
-            output[start:start + 256, channel] = microphones[start:start + 256, channel] - prediction
+            output[start:start + length, channel] = microphones[start:start + length, channel] - prediction[:length]
     return output
 
 
