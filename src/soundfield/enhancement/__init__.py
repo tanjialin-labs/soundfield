@@ -12,3 +12,7 @@ __all__ = ["NoiseTrackingConfig", "NoiseReferencePostfilter", "ReferencePostfilt
 from .automatic_gain import AutomaticGainControl, GainControlConfig, GainCurveConfig, GainSmoothingConfig
 
 __all__ += ['AutomaticGainControl', 'GainControlConfig', 'GainCurveConfig', 'GainSmoothingConfig']
+
+from .dynamic_range import DynamicRangeConfig, DynamicRangeController
+
+__all__ += ['DynamicRangeConfig', 'DynamicRangeController']
