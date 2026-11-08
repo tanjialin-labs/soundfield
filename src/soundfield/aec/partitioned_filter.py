@@ -69,7 +69,7 @@ class PartitionedEchoFilter:
                 impulse = np.fft.irfft(self.adaptive_weights, n=2*hop, axis=0)
                 impulse[hop:] = 0
                 delay_candidates = impulse[:hop, ::config.reference_count]
-                self.estimated_delay_samples = int(np.argmax(delay_candidates.ravel(order='F')))
+                self.estimated_delay_samples = int(np.argmax(np.abs(delay_candidates).ravel(order='F')))
                 self.adaptive_weights = np.fft.rfft(impulse, axis=0)
             self.residual_history[:hop], self.residual_history[hop:] = self.residual_history[hop:].copy(), residual
             self.echo_history[:hop], self.echo_history[hop:] = self.echo_history[hop:].copy(), echo

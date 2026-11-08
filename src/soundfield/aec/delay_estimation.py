@@ -22,7 +22,7 @@ def estimate_filter_delay(adaptive_weights, hop_length_samples, reference_count=
         response = impulse[:, 0]
     else:
         response = (impulse[:hop_length_samples, :-1]+impulse[hop_length_samples:, 1:]).ravel(order='F')
-    return int(np.argmax(response))
+    return int(np.argmax(np.abs(response)))
 
 
 @dataclass(frozen=True)
