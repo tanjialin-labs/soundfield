@@ -17,8 +17,6 @@ def trim_speech_intervals(audio, sample_rate_hz):
     if not len(gaps):
         return samples[indices[0]:indices[-1]+1].copy()
     boundaries = np.column_stack((indices[gaps], indices[gaps+1])).ravel()
-    if len(boundaries) == 2:
-        return np.r_[samples[indices[0]:boundaries[0]+1], samples[boundaries[0]:indices[-1]+1]]
     parts = [samples[indices[0]:boundaries[0]+1]]
     parts.extend(samples[boundaries[index]:boundaries[index+1]+1] for index in range(1, len(boundaries)-1, 2))
     parts.append(samples[boundaries[-1]:indices[-1]+1])
