@@ -23,3 +23,7 @@ __all__ = ['EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivity
            'SpectralEchoPostfilter', 'AcousticEchoCanceller', 'EchoCancellationConfig', 'EchoAudioResult',
            'cancel_echo', 'IterativeEchoCanceller', 'IterativeEchoConfig', 'PlaybackAdaptiveEchoFilter',
            'PlaybackEchoConfig', 'PlaybackEchoResult', 'PlaybackOutputController', 'PlaybackResidualSuppressor', 'PlaybackPostfilterConfig']
+
+from .coupled_postfilter import CoupledEchoPostfilter, CoupledPostfilterConfig
+
+__all__ += ['CoupledEchoPostfilter', 'CoupledPostfilterConfig']
