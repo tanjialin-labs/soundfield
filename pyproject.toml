@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soundfield"
+version = "0.6.0"
+description = "Audio and microphone-array signal processing"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "scipy>=1.11"]
+license-files = ["licenses/*.txt"]
+
+[project.optional-dependencies]
+design = ["cvxpy>=1.6", "sympy>=1.13"]
+evaluation = ["pesq>=0.0.4", "pystoi>=0.4"]
+plotting = ["matplotlib>=3.8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = false

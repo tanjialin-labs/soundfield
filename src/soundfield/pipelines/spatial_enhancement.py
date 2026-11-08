@@ -1,0 +1,67 @@
+"""Complete audio operations for spatial suppression and dereverberation."""
+
+import numpy as np
+
+from ..beamforming import MaskGuidedBeamformer, MaskGuidedConfig, MvdrConfig
+from ..contracts import audio_array, unit_interval_array
+from ..dereverb import WeightedPredictionDereverberator, WpeConfig
+from ..enhancement import CorrelationNoiseSuppressor, CorrelationSuppressionConfig
+from ..transform import FourierConfig, ShortTimeFourierTransform
+
+
+def enhance_with_spatial_mask(audio, speech_gains, config: MaskGuidedConfig | None = None, *, transform_config=None):
+    """Return mono audio from a (bins, frames, 1) speech-gain cube."""
+    samples = audio_array(audio)
+    config = config if config is not None else MaskGuidedConfig(MvdrConfig(microphone_count=samples.shape[1]))
+    transform = ShortTimeFourierTransform(transform_config)
+    dimensions = config.beamformer
+    if samples.shape[1] != dimensions.microphone_count or transform.config.frequency_bin_count != dimensions.frequency_bin_count:
+        raise ValueError("audio, transform, and beamformer dimensions must agree")
+    spectrum = transform.analyze(samples)
+    gains = unit_interval_array(speech_gains, "speech_gains", (*spectrum.shape[:2], 1))
+    engine = MaskGuidedBeamformer(config)
+    output = np.empty((*spectrum.shape[:2], 1), dtype=np.complex128)
+    for frame in range(spectrum.shape[1]):
+        output[:, frame] = engine.process_frame(spectrum[:, frame], gains[:, frame])
+    return transform.synthesize(output, length_samples=len(samples))
+
+
+def suppress_correlated_noise(audio, config: CorrelationSuppressionConfig | None = None, *, transform_config=None):
+    """Enhance all channels with independent selected-channel histories."""
+    samples = audio_array(audio)
+    config = config if config is not None else CorrelationSuppressionConfig(channel_count=samples.shape[1])
+    length = 2 * (config.frequency_bin_count - 1)
+    transform = ShortTimeFourierTransform(transform_config if transform_config is not None else FourierConfig(length, length // 2))
+    if samples.shape[1] != config.channel_count or transform.config.frequency_bin_count != config.frequency_bin_count:
+        raise ValueError("audio, transform, and suppressor dimensions must agree")
+    spectrum = transform.analyze(samples)
+    output = np.empty_like(spectrum)
+    engine = CorrelationNoiseSuppressor(config)
+    for frame in range(spectrum.shape[1]):
+        for channel in range(samples.shape[1]):
+            output[:, frame, channel:channel + 1] = engine.process_frame(spectrum[:, frame], channel)
+    return transform.synthesize(output, length_samples=len(samples))
+
+
+def reduce_reverberation(audio, config: WpeConfig | None = None, *, transform_config=None, compensate_delay=False):
+    """Return the input sample count, optionally draining and removing frame delay.
+
+    Without delay compensation, leading delayed frames are retained. With it,
+    zero input frames drain the tail before the delayed prefix is removed.
+    """
+    samples = audio_array(audio)
+    config = config if config is not None else WpeConfig(channel_count=samples.shape[1])
+    if not isinstance(compensate_delay, bool):
+        raise ValueError("compensate_delay must be boolean")
+    transform = ShortTimeFourierTransform(transform_config if transform_config is not None else FourierConfig(config.frame_length_samples, config.frame_length_samples // 2))
+    if samples.shape[1] != config.channel_count or transform.config.frequency_bin_count != config.frequency_bin_count:
+        raise ValueError("audio, transform, and predictor dimensions must agree")
+    spectrum = transform.analyze(samples)
+    engine = WeightedPredictionDereverberator(config)
+    output = np.empty_like(spectrum)
+    for frame in range(spectrum.shape[1]):
+        output[:, frame] = engine.process_frame(spectrum[:, frame])
+    if compensate_delay and spectrum.shape[1]:
+        extended = np.concatenate((output, engine.flush()), axis=1)
+        output = extended[:, config.output_delay_frames:config.output_delay_frames + spectrum.shape[1]]
+    return transform.synthesize(output, length_samples=len(samples))

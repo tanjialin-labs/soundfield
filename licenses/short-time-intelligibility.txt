@@ -1,0 +1,12 @@
+Short-Time Objective Intelligibility measure
+
+Copyright 2009: Delft University of Technology, Signal & Information
+Processing Lab. The software is free for non-commercial use. This program
+comes WITHOUT ANY WARRANTY.
+
+C. H. Taal, R. C. Hendriks, R. Heusdens, J. Jensen:
+"A Short-Time Objective Intelligibility Measure for Time-Frequency Weighted
+Noisy Speech", ICASSP 2010.
+"An Algorithm for Intelligibility Prediction of Time-Frequency Weighted
+Noisy Speech", IEEE Transactions on Audio, Speech, and Language Processing,
+2011.

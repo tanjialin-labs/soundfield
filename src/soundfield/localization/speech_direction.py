@@ -1,0 +1,74 @@
+"""Speech-gated direction persistence within channel-dependent search regions."""
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from ..contracts import real_array, positive_integer, finite_scalar
+
+
+@dataclass(frozen=True)
+class SpeechDirectionConfig:
+    smoothing: float = 0.9
+    peak_distance_bins: int = 2
+    silence_hold_frames: int = 20
+    silence_reset_frames: int = 50
+    speech_threshold: float = 10.0
+    history_frames: int = 5
+
+    def __post_init__(self):
+        finite_scalar(self.smoothing, 'smoothing', minimum=0, maximum=1)
+        finite_scalar(self.speech_threshold, 'speech_threshold', minimum=0)
+        for name in ('peak_distance_bins', 'silence_hold_frames', 'silence_reset_frames', 'history_frames'):
+            positive_integer(getattr(self, name), name)
+        if self.silence_reset_frames < self.silence_hold_frames:
+            raise ValueError('silence_reset_frames must be at least silence_hold_frames')
+
+
+class SpeechGatedDirectionTracker:
+    """Return zero-based direction indices, or None after sustained inactivity."""
+
+    def __init__(self, config=SpeechDirectionConfig(), *, search_regions=((0, 15), (7, 20), (13, 27)),
+                 direction_count=27):
+        positive_integer(direction_count, 'direction_count')
+        self.config, self.direction_count = config, direction_count
+        self.search_regions = tuple(search_regions)
+        if not self.search_regions or any(start < 0 or stop <= start or stop > direction_count
+                                          for start, stop in self.search_regions):
+            raise ValueError('search regions must be nonempty half-open direction intervals')
+        self.reset()
+
+    def reset(self):
+        self.smoothed_scores = np.zeros(self.direction_count)
+        self.direction_history = np.full(self.config.history_frames, -2-self.config.peak_distance_bins, int)
+        self.silent_frames = 0
+
+    def process_frame(self, direction_scores, speech_evidence, selected_channel):
+        scores = real_array(direction_scores, 'direction_scores', 1)
+        finite_scalar(speech_evidence, 'speech_evidence', minimum=0)
+        if scores.shape != (self.direction_count,) or np.any(scores < 0):
+            raise ValueError('direction_scores must be nonnegative and match direction_count')
+        if not isinstance(selected_channel, (int, np.integer)) or not 0 <= selected_channel < len(self.search_regions):
+            raise ValueError('selected_channel is outside the search regions')
+        index = self.direction_history[-1]
+        if speech_evidence > self.config.speech_threshold:
+            self.silent_frames = 0
+            self.smoothed_scores *= self.config.smoothing
+            self.smoothed_scores += (1-self.config.smoothing)*scores
+            masked = np.zeros_like(scores)
+            start, stop = self.search_regions[selected_channel]
+            masked[start:stop] = self.smoothed_scores[start:stop]
+            candidates = np.flatnonzero(masked > masked.max()*0.5)
+            if not candidates.size or np.min(np.abs(candidates-index)) > self.config.peak_distance_bins:
+                index = int(np.argmax(masked))
+        else:
+            self.silent_frames += 1
+        self.direction_history[:-1] = self.direction_history[1:]
+        self.direction_history[-1] = index
+        if self.silent_frames >= self.config.silence_hold_frames:
+            self.direction_history[:-1] = self.direction_history[1:]
+            self.direction_history[-1] = -2-self.config.peak_distance_bins
+        if self.silent_frames >= self.config.silence_reset_frames:
+            self.smoothed_scores.fill(0)
+        index = int(self.direction_history[-1])
+        return None if index < 0 else index
