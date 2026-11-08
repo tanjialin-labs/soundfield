@@ -29,6 +29,7 @@ class ResidualEchoConfig:
     high_level_threshold: float = .0005
     high_level_attack_frames: int = 10
     high_level_release_frames: int = 200
+    maximum_snr: float = 40.0
 
     def __post_init__(self):
         for name in ('frequency_bin_count', 'sample_rate_hz', 'band_count', 'high_level_attack_frames', 'high_level_release_frames'):
@@ -43,6 +44,7 @@ class ResidualEchoConfig:
                      'double_talk_energy_threshold', 'mean_gain_scale', 'high_level_threshold'):
             finite_scalar(getattr(self, name), name, minimum=0)
         finite_scalar(self.noise_floor, 'noise_floor', minimum=np.finfo(float).eps)
+        finite_scalar(self.maximum_snr, 'maximum_snr', minimum=np.finfo(float).eps)
         if any(not 0 <= start < stop <= self.frequency_bin_count for start, stop in self.energy_intervals):
             raise ValueError('energy intervals must fit inside the spectrum')
 
@@ -92,6 +94,7 @@ class ResidualEchoPostfilter:
     def reset(self):
         bins = self.config.frequency_bin_count
         self.frame_count = 0
+        self.frame_probability = .1
         self.cross_power = np.zeros(bins, complex)
         self.echo_power = np.zeros(bins)
         self.residual_power = np.zeros(bins)
@@ -103,20 +106,23 @@ class ResidualEchoPostfilter:
         self.gains = np.zeros(bins)
         self.level_detector.reset()
 
+    def _estimate_residual_echo(self, residual, estimated, power, echo):
+        smoothing = self.config.coherence_smoothing if self.frame_count else 0
+        self.cross_power = smoothing*self.cross_power+(1-smoothing)*estimated*residual.conj()
+        self.echo_power = smoothing*self.echo_power+(1-smoothing)*echo
+        self.residual_power = smoothing*self.residual_power+(1-smoothing)*power
+        ratio = np.minimum(1, np.divide(self.residual_power, self.echo_power, out=np.ones_like(power), where=self.echo_power>0))
+        denominator = np.sqrt(self.residual_power*self.echo_power)
+        coherence = np.divide(np.abs(self.cross_power), denominator, out=np.zeros_like(power), where=denominator>0)
+        return echo*np.minimum(1, self.config.coherence_scale*ratio*coherence)+self.config.noise_floor
+
     def process_frame(self, residual_spectrum, echo_spectrum, *, speech_mask=None):
         config = self.config
         bins = config.frequency_bin_count
         residual = spectral_frame(residual_spectrum, bins, 1)[:, 0]
         estimated = spectral_frame(echo_spectrum, bins, 1)[:, 0]
         power, echo = np.abs(residual)**2, np.abs(estimated)**2
-        smoothing = config.coherence_smoothing if self.frame_count else 0
-        self.cross_power = smoothing*self.cross_power+(1-smoothing)*estimated*residual.conj()
-        self.echo_power = smoothing*self.echo_power+(1-smoothing)*echo
-        self.residual_power = smoothing*self.residual_power+(1-smoothing)*power
-        ratio = np.minimum(1, np.divide(self.residual_power, self.echo_power, out=np.ones(bins), where=self.echo_power>0))
-        denominator = np.sqrt(self.residual_power*self.echo_power)
-        coherence = np.divide(np.abs(self.cross_power), denominator, out=np.zeros(bins), where=denominator>0)
-        residual_echo = echo*np.minimum(1, config.coherence_scale*ratio*coherence)+config.noise_floor
+        residual_echo = self._estimate_residual_echo(residual, estimated, power, echo)
         if config.enable_level_detection:
             self.level_detector.process_frame(residual_echo)
         if config.method == 'mask':
@@ -136,12 +142,13 @@ class ResidualEchoPostfilter:
             if self.frame_count == 0:
                 self.previous_output_power = combined_power.copy()
             noise = config.noise_floor+self.held_echo_power
-            posterior = np.minimum(combined_power/noise-1, 40)
+            posterior = np.minimum(combined_power/noise-1, config.maximum_snr)
             weight = .1+.89*(self.previous_output_power/(self.previous_output_power+noise))**2
-            prior = np.minimum(weight*np.maximum(posterior, 0)+(1-weight)*self.previous_output_power/noise, 40)
+            prior = np.minimum(weight*np.maximum(posterior, 0)+(1-weight)*self.previous_output_power/noise, config.maximum_snr)
             self.smoothed_prior[bins-1:] = .7*self.smoothed_prior[bins-1:]+.3*prior[bins-1:]
             mean_prior = self.smoothed_prior[bins+6:bins+config.band_count-5].sum()/(config.band_count-11)
             frame_probability = .1+.899*mean_prior/(mean_prior+.15)
+            self.frame_probability = frame_probability
             attenuation = (1-frame_probability)*-40+frame_probability*-15
             echo_floor = np.exp(.2302585*np.trunc(attenuation))
             band_floor = np.sqrt(echo_floor*self.held_echo_power[bins:])/np.sqrt(1+self.held_echo_power[bins:])

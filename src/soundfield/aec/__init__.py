@@ -12,6 +12,7 @@ from .communication_postfilter import CommunicationEchoPostfilter, Communication
 from .echo_cancellation import AcousticEchoCanceller, EchoCancellationConfig, EchoAudioResult, cancel_echo
 from .iterative_cancellation import IterativeEchoCanceller, IterativeEchoConfig
 from .playback_adaptation import PlaybackAdaptiveEchoFilter, PlaybackEchoConfig, PlaybackEchoResult
+from .playback_postfilter import PlaybackResidualSuppressor, PlaybackPostfilterConfig
 
 __all__ = ['EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivityDetector', 'ReferenceActivityConfig',
            'EchoFilterConfig', 'ReferenceSpectrumBuffer', 'PartitionedEchoFilter', 'EchoSpectrumResult',
@@ -20,4 +21,4 @@ __all__ = ['EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivity
            'ResidualLevelDetector', 'EchoNoiseConfig', 'CommunicationEchoPostfilter', 'CommunicationPostfilterConfig',
            'SpectralEchoPostfilter', 'AcousticEchoCanceller', 'EchoCancellationConfig', 'EchoAudioResult',
            'cancel_echo', 'IterativeEchoCanceller', 'IterativeEchoConfig', 'PlaybackAdaptiveEchoFilter',
-           'PlaybackEchoConfig', 'PlaybackEchoResult']
+           'PlaybackEchoConfig', 'PlaybackEchoResult', 'PlaybackResidualSuppressor', 'PlaybackPostfilterConfig']
