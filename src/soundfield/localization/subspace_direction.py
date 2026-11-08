@@ -296,7 +296,8 @@ class SubspaceDirectionEstimator:
             ranking = np.argsort(-summed[candidates], kind="stable")
             baseline, peak = np.min(summed[scan]), summed[candidates[ranking[0]]]
             for index in range(1, len(candidates)):
-                separation = min((candidates[index] - candidates[0]) % len(scan), (candidates[0] - candidates[index]) % len(scan))
+                first, second = candidates[ranking[0]], candidates[ranking[index]]
+                separation = min((second - first) % len(scan), (first - second) % len(scan))
                 if (summed[candidates[ranking[index]]] - baseline > config.secondary_peak_fraction * (peak - baseline)
                         and separation >= config.secondary_peak_separation_steps):
                     selected.append(int(candidates[ranking[index]]))
