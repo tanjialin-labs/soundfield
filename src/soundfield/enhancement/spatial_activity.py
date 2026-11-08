@@ -34,8 +34,8 @@ class SpatialActivityGate:
 
     def process_frame(self, spatial_evidence):
         finite_scalar(spatial_evidence, 'spatial_evidence', minimum=0)
-        self.accumulator = max(min(self.accumulator, self.config.accumulator_limit)
-                               + spatial_evidence - self.config.decay_per_frame, 0)
+        self.accumulator = min(max(self.accumulator + spatial_evidence
+                                   - self.config.decay_per_frame, 0), self.config.accumulator_limit)
         self.vote_history[:-1] = self.vote_history[1:]
         self.vote_history[-1] = self.accumulator > self.config.activation_threshold
         return float(self.vote_history.sum() > self.config.vote_threshold)
