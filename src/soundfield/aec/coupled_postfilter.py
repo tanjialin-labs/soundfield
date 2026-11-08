@@ -39,6 +39,7 @@ class CoupledEchoPostfilter:
     def reset(self):
         hop = self.config.hop_length_samples
         self.frame_count = 0
+        self._closed = False
         self.residual_history = np.zeros((2*hop, 1))
         self.echo_history = np.zeros_like(self.residual_history)
         self.cross_power = np.zeros(hop+1, complex)
@@ -74,6 +75,8 @@ class CoupledEchoPostfilter:
         return spectrum*gains
 
     def process_block(self, residual_audio, echo_audio):
+        if self._closed:
+            raise ValueError('reset the postfilter before starting another stream')
         residual, estimated = audio_array(residual_audio), audio_array(echo_audio)
         config, hop = self.config, self.config.hop_length_samples
         if residual.shape != (hop, 1) or estimated.shape != residual.shape:
@@ -107,4 +110,11 @@ class CoupledEchoPostfilter:
         return self.synthesis.process_frame(self.output_spectrum)
 
     def flush(self):
-        return self.synthesis.flush()
+        if self._closed or not self.frame_count:
+            self._closed = True
+            return np.empty((0, 1))
+        silence = np.zeros((self.config.hop_length_samples, 1))
+        final = self.process_block(silence, silence)
+        tail = self.synthesis.flush()
+        self._closed = True
+        return np.concatenate((final, tail))
