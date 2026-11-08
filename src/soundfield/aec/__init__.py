@@ -31,3 +31,7 @@ __all__ += ['CoupledEchoPostfilter', 'CoupledPostfilterConfig']
 from .farend_speech import FarendSpeechConfig, FarendSpeechDetector, FarendSpeechResult
 
 __all__ += ['FarendSpeechConfig', 'FarendSpeechDetector', 'FarendSpeechResult']
+
+from .coupled_cancellation import CoupledEchoCanceller, CoupledEchoConfig, CoupledEchoResult
+
+__all__ += ['CoupledEchoCanceller', 'CoupledEchoConfig', 'CoupledEchoResult']
