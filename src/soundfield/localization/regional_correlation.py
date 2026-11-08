@@ -83,7 +83,7 @@ class RegionalCorrelationEstimator:
                 elif (first, second) == (0, 1):
                     start, stop = config.steering_bins
                     response = np.mean((correlation[start:stop, None]*self.steering_weights).real, axis=0)
-                    score = int(np.argmax(response))+1-len(response)/2
+                    score = int(np.argmax(response))-(len(response)-1)/2
                 else:
                     start, stop = config.correlation_bins
                     selected = np.zeros(config.frequency_bin_count, complex)
