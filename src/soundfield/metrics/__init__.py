@@ -12,3 +12,7 @@ from .coherent_diffuse import CoherentDiffuseConfig, coherent_diffuse_ratio, imp
 from .modulation_energy import ModulationEnergyResult, modulation_energy_ratio, active_speech_level_db, trim_speech_intervals
 
 __all__ += ['PerceptualSpeechQuality', 'log_spectral_distance', 'perceptual_speech_quality', 'speech_intelligibility', 'CoherentDiffuseConfig', 'coherent_diffuse_ratio', 'impulse_response_onset', 'impulse_direct_reverberant_ratio', 'ModulationEnergyResult', 'modulation_energy_ratio', 'active_speech_level_db', 'trim_speech_intervals']
+
+from .waveform_comparison import WaveformComparison, compare_waveforms
+
+__all__ += ['WaveformComparison', 'compare_waveforms']
