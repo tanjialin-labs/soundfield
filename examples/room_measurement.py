@@ -32,9 +32,9 @@ def main():
             sweep_seconds=args.sweep_seconds,repeat_count=args.repeats)
         probe={}
         if args.probe:
-            if args.probe.resolve() in ((output/'stimulus.wav').resolve(),(output/'stimulus.json').resolve()):parser.error('probe must differ from output resources')
+            if args.probe.resolve() in ((output/'excitation.wav').resolve(),(output/'stimulus.json').resolve()):parser.error('probe must differ from output resources')
             rate,audio=read_audio(args.probe);probe=dict(probe_audio=audio,probe_sample_rate_hz=rate)
-        save_sweep_stimulus(output/'stimulus.json',output/'stimulus.wav',create_sweep_stimulus(config,**probe))
+        save_sweep_stimulus(output/'stimulus.json',output/'excitation.wav',create_sweep_stimulus(config,**probe))
     else:
         stimulus=load_sweep_stimulus(args.stimulus)
         inputs={args.recording.resolve(),args.stimulus.resolve()}
