@@ -42,3 +42,9 @@ python examples/audio_reconstruction.py input.wav output.wav
 python examples/echo_cancellation.py microphone.wav reference.wav cleaned.wav
 python examples/room_measurement.py generate stimulus
 ```
+
+`FourierAnalyzer` 和 `FourierSynthesizer` 支持任意长度音频块及频谱帧批次。使用 `process_block` 连续输入，结束时调用 `flush`，新流开始前调用 `reset`。合成尾部包含补零范围，可按实际输入长度裁剪。
+
+```sh
+python examples/streaming_reconstruction.py input.wav output.wav --block-samples 1000
+```

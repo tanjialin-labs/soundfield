@@ -75,10 +75,19 @@ class ShortTimeFourierTransform:
             return np.empty((self.config.frequency_bin_count, 0, channels), dtype=np.complex128)
         frame_count = 1 + max(0, (sample_count - length + hop - 1) // hop)
         padded_length = (frame_count - 1) * hop + length
-        padded = np.pad(samples, ((0, padded_length - sample_count), (0, 0)))
+        padded = samples if padded_length == sample_count else np.pad(samples, ((0, padded_length - sample_count), (0, 0)))
         frames = np.lib.stride_tricks.sliding_window_view(padded, length, axis=0)[::hop]
         frames = frames.transpose(2, 0, 1)
         return np.fft.rfft(frames * self._window[:, None, None], axis=0)
+
+    def _synthesis_parameters(self):
+        length, hop, name = self.config.frame_length_samples, self.config.hop_length_samples, self.config.window
+        normalize = not (length == 2 * hop and name in ("sqrt_hann", "hann"))
+        synthesis_window = np.ones(length) if name in ("hann", "hann_periodic") else self._window
+        if name == "hann" and normalize:
+            synthesis_window = self._window
+        denominator_window = np.full(length, 0.5) if "periodic" in name else self._window**2
+        return normalize, synthesis_window, denominator_window
 
     def synthesize(self, spectrum, *, length_samples: int | None = None):
         frequencies = spectral_array(spectrum)
@@ -86,7 +95,6 @@ class ShortTimeFourierTransform:
             raise ValueError("spectrum frequency bins do not match the configuration")
         length = self.config.frame_length_samples
         hop = self.config.hop_length_samples
-        name = self.config.window
         frame_count, channels = frequencies.shape[1:]
         output_length = (frame_count - 1) * hop + length if frame_count else 0
         if length_samples is not None:
@@ -97,12 +105,8 @@ class ShortTimeFourierTransform:
         if frame_count == 0:
             return output
         frames = np.fft.irfft(frequencies, n=length, axis=0)
-        normalize = not (length == 2 * hop and name in ("sqrt_hann", "hann"))
-        synthesis_window = np.ones(length) if name in ("hann", "hann_periodic") else self._window
-        if name == "hann" and normalize:
-            synthesis_window = self._window
-        denominator_window = np.full(length, 0.5) if "periodic" in name else self._window**2
-        denominator = np.zeros(output_length)
+        normalize, synthesis_window, denominator_window = self._synthesis_parameters()
+        denominator = np.zeros(output_length) if normalize else None
         for frame_index in range(frame_count):
             start = frame_index * hop
             output[start:start + length] += frames[:, frame_index, :] * synthesis_window[:, None]

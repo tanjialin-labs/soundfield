@@ -81,7 +81,6 @@ class MvdrBeamformer:
         noise_covariance = noise_memory * self._noise_covariance + (1 - noise_memory) * noise[:, :, None] * noise[:, None, :].conj()
         loading = config.diagonal_loading * np.eye(config.microphone_count)
         steering = np.empty_like(self._steering)
-        coefficients = np.empty_like(self._coefficients)
         for frequency in range(config.frequency_bin_count):
             loaded_speech = speech_covariance[frequency] + loading
             left_vectors, _, _ = svd(loaded_speech, lapack_driver="gesvd", check_finite=False)
@@ -89,9 +88,9 @@ class MvdrBeamformer:
             orientation = np.sign(np.real(np.vdot(direction, loaded_speech[:, 0])))
             if orientation != 0:
                 direction = orientation * direction
-            inverse_direction = np.linalg.solve(noise_covariance[frequency] + loading, direction)
-            coefficients[frequency] = inverse_direction / np.vdot(direction, inverse_direction)
             steering[frequency] = direction
+        inverse_direction = np.linalg.solve(noise_covariance + loading, steering[..., None])[..., 0]
+        coefficients = inverse_direction / np.sum(steering.conj()*inverse_direction, axis=1, keepdims=True)
         output = np.sum(spectrum * coefficients.conj(), axis=1, keepdims=True)
         self._speech_covariance = speech_covariance
         self._noise_covariance = noise_covariance

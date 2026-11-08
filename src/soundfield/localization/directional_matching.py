@@ -164,23 +164,26 @@ class DirectionalMatchingEstimator:
             mask &= np.all((phase >= np.min(bounds, axis=2)[:, None]) & (phase <= np.max(bounds, axis=2)[:, None]), axis=2)
         coefficients = np.zeros((len(values), config.block_frames, len(config.scan_angles_degrees)), complex)
         for frequency in range(len(values)):
+            valid = np.flatnonzero(mask[frequency])
+            if not len(valid):
+                continue
             dictionary = self._dictionary[frequency]
-            for frame in np.flatnonzero(mask[frequency]):
-                observation = values[frequency, frame]
-                residual = observation.copy()
-                chosen = []
-                weights = np.zeros(dictionary.shape[1], complex)
-                for _ in range(config.source_count):
-                    correlation = dictionary.conj().T @ residual
-                    index = int(np.argmax(np.abs(correlation)))
-                    chosen.append(index)
-                    weights[chosen] = dictionary[:, chosen].conj().T @ observation
-                    residual = observation - dictionary @ weights
-                if config.coherence_weight_floor is not None:
-                    denominator = abs(observation[0]) * abs(observation[1])
-                    coherence = abs(np.real(observation[0] * observation[1].conj())) / denominator if denominator else 0
-                    weights /= max(coherence, config.coherence_weight_floor)
-                coefficients[frequency, frame] = weights
+            observation = values[frequency, valid]
+            residual = observation.copy()
+            projection = observation @ dictionary.conj()
+            weights = np.zeros_like(projection)
+            rows = np.arange(len(valid))
+            for _ in range(config.source_count):
+                correlation = residual @ dictionary.conj()
+                chosen = np.argmax(np.abs(correlation), axis=1)
+                weights[rows, chosen] = projection[rows, chosen]
+                residual = observation - weights @ dictionary.T
+            if config.coherence_weight_floor is not None:
+                denominator = np.abs(observation[:, 0])*np.abs(observation[:, 1])
+                coherence = np.divide(np.abs(np.real(observation[:, 0]*observation[:, 1].conj())),
+                                      denominator, out=np.zeros_like(denominator), where=denominator > 0)
+                weights /= np.maximum(coherence, config.coherence_weight_floor)[:, None]
+            coefficients[frequency, valid] = weights
         frames = np.sum(np.abs(coefficients), axis=0)
         if config.use_frame_energy:
             frames *= np.mean(np.abs(block[:, :, 0]) ** 2, axis=0)[:, None]
