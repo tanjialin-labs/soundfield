@@ -8,7 +8,7 @@ from ..contracts import positive_integer, nonnegative_integer, real_array, finit
 
 
 def estimate_filter_delay(adaptive_weights, hop_length_samples, reference_count=1, *, constrained=False):
-    """Return the peak position in samples, using a one-sample origin."""
+    """Return the peak delay in samples, with zero denoting no delay."""
     positive_integer(hop_length_samples, 'hop_length_samples')
     positive_integer(reference_count, 'reference_count')
     weights = np.asarray(adaptive_weights, dtype=complex)
@@ -22,7 +22,7 @@ def estimate_filter_delay(adaptive_weights, hop_length_samples, reference_count=
         response = impulse[:, 0]
     else:
         response = (impulse[:hop_length_samples, :-1]+impulse[hop_length_samples:, 1:]).ravel(order='F')
-    return int(np.argmax(response))+1
+    return int(np.argmax(response))
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ class CorrelationDelayEstimator:
             history[:-hop], history[-hop:] = history[hop:].copy(), values
         count = len(self.microphone_history)
         selected_reference = self.reference_history[:count]
-        scale = np.linalg.norm(self.microphone_history)*np.linalg.norm(self.reference_history)
+        scale = np.linalg.norm(self.microphone_history)*np.linalg.norm(selected_reference)
         if scale == 0:
             self.peak_correlation = 0.0
             return self.delay_samples
@@ -73,5 +73,5 @@ class CorrelationDelayEstimator:
         self.peak_correlation = float(correlation[peak])
         relative_mean = correlation.mean()/self.peak_correlation if self.peak_correlation > 0 else 1
         if relative_mean < self.config.relative_mean_threshold and self.peak_correlation > self.config.peak_threshold:
-            self.delay_samples = peak-count+1
+            self.delay_samples = peak-count+self.config.initial_delay_samples
         return self.delay_samples
