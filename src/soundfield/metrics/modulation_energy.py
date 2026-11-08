@@ -154,7 +154,7 @@ def modulation_energy_ratio(audio, sample_rate_hz, *, fast=False, normalized=Fal
         raise ValueError('modulation energy is zero')
     cumulative = np.cumsum(average.sum(axis=1)[::-1])*100/total
     width = bandwidths[::-1][np.flatnonzero(cumulative>90)[0]]
-    cutoffs = centers-np.tan(np.pi*centers/sample_rate_hz)/2*sample_rate_hz/(2*np.pi)
+    cutoffs = centers-np.tan(np.pi*centers/envelope_rate)/2*envelope_rate/(2*np.pi)
     upper_count = max(5, min(8, int(np.searchsorted(cutoffs, width, side='left'))))
     denominator = average[:, 4:upper_count].sum()
     if denominator == 0:
