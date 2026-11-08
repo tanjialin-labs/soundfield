@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import lfilter
 
-from ..contracts import nonnegative_integer, positive_integer, spectral_frame
+from ..contracts import finite_scalar, nonnegative_integer, positive_integer, spectral_frame
 
 
 @dataclass(frozen=True)
@@ -16,11 +16,13 @@ class WindowedSnrConfig:
     stop_bin: int = 160
     noise_window_frames: int = 100
     speech_window_frames: int = 40
+    power_floor: float = 1e-12
 
     def __post_init__(self):
         for name in ("frequency_bin_count", "channel_count", "stop_bin", "noise_window_frames", "speech_window_frames"):
             positive_integer(getattr(self, name), name)
         nonnegative_integer(self.start_bin, "start_bin")
+        finite_scalar(self.power_floor, "power_floor", minimum=np.finfo(float).tiny)
         if not self.start_bin + 1 < self.stop_bin <= self.frequency_bin_count:
             raise ValueError("frequency interval must contain at least two bins")
 
@@ -73,7 +75,7 @@ class WindowedSnrEstimator:
             if not self._update_count:
                 return 0.0
             return float(self._speech_power[selected] / self._noise_power[selected])
-        power = np.abs(spectrum[config.start_bin:config.stop_bin]) ** 2 + 1
+        power = np.abs(spectrum[config.start_bin:config.stop_bin]) ** 2 + config.power_floor
         smooth = lfilter([.25, .5, .25], [1], power, axis=0)
         smooth[1:-1] = smooth[2:]
         smooth[[0, -1]] = power[[0, -1]]
