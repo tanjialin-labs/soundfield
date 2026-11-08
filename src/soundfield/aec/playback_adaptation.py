@@ -84,8 +84,24 @@ class PlaybackAdaptiveEchoFilter:
             index = np.arange(count)
             regularized[:,index,index] = np.maximum(diagonal+config.covariance_loading*diagonal.mean(axis=0),
                                                      self.update_floor[:,None]*config.update_loading_scale)
-            determinant = np.linalg.det(regularized)
-            self.inverse_covariance = np.linalg.inv(regularized)*(determinant/(determinant+config.determinant_floor))[:,None,None]
+            if count == 2:
+                determinant = np.linalg.det(regularized)
+                self.inverse_covariance = np.linalg.inv(regularized)*(determinant/(determinant+config.determinant_floor))[:,None,None]
+            else:
+                a, b, c = regularized[:, 0, 0], regularized[:, 1, 1], regularized[:, 2, 2]
+                d, e, f = regularized[:, 0, 1], regularized[:, 0, 2], regularized[:, 1, 2]
+                adjugate = np.empty_like(regularized)
+                adjugate[:, 0, 0] = b*c-f.conj()*f
+                adjugate[:, 1, 1] = a*c-e.conj()*e
+                adjugate[:, 2, 2] = a*b-d.conj()*d
+                adjugate[:, 0, 1] = e*f.conj()-d*c
+                adjugate[:, 0, 2] = d*f-e*b
+                adjugate[:, 1, 2] = e*d.conj()-a*f
+                adjugate[:, 1, 0] = adjugate[:, 0, 1].conj()
+                adjugate[:, 2, 0] = adjugate[:, 0, 2].conj()
+                adjugate[:, 2, 1] = adjugate[:, 1, 2].conj()
+                determinant = a*b*c+d*f*e.conj()+d.conj()*f.conj()*e-a*f.conj()*f-c*d.conj()*d-b*e.conj()*e
+                self.inverse_covariance = adjugate/(determinant+config.determinant_floor)[:, None, None]
         weights = self.coefficient_banks[playback_mode]
         estimate = np.fft.irfft(np.sum(self.partition_spectra*weights,axis=1),n=2*hop)[hop:]
         residual = microphone[:,0]-estimate
