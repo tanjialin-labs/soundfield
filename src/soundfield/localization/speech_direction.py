@@ -63,11 +63,10 @@ class SpeechGatedDirectionTracker:
                 index = int(np.argmax(masked))
         else:
             self.silent_frames += 1
+        if self.silent_frames >= self.config.silence_hold_frames:
+            index = -2-self.config.peak_distance_bins
         self.direction_history[:-1] = self.direction_history[1:]
         self.direction_history[-1] = index
-        if self.silent_frames >= self.config.silence_hold_frames:
-            self.direction_history[:-1] = self.direction_history[1:]
-            self.direction_history[-1] = -2-self.config.peak_distance_bins
         if self.silent_frames >= self.config.silence_reset_frames:
             self.smoothed_scores.fill(0)
         index = int(self.direction_history[-1])
