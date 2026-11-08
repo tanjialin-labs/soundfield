@@ -27,3 +27,7 @@ __all__ = ['EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivity
 from .coupled_postfilter import CoupledEchoPostfilter, CoupledPostfilterConfig
 
 __all__ += ['CoupledEchoPostfilter', 'CoupledPostfilterConfig']
+
+from .farend_speech import FarendSpeechConfig, FarendSpeechDetector, FarendSpeechResult
+
+__all__ += ['FarendSpeechConfig', 'FarendSpeechDetector', 'FarendSpeechResult']
