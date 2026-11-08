@@ -35,3 +35,7 @@ __all__ += ['FarendSpeechConfig', 'FarendSpeechDetector', 'FarendSpeechResult']
 from .coupled_cancellation import CoupledEchoCanceller, CoupledEchoConfig, CoupledEchoResult
 
 __all__ += ['CoupledEchoCanceller', 'CoupledEchoConfig', 'CoupledEchoResult']
+
+from .playback_spectrum import PlaybackSpectrumAnalyzer, PlaybackSpectrumConfig, PlaybackSpectrumResult
+
+__all__ += ['PlaybackSpectrumAnalyzer', 'PlaybackSpectrumConfig', 'PlaybackSpectrumResult']
