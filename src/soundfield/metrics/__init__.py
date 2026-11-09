@@ -16,3 +16,7 @@ __all__ += ['PerceptualSpeechQuality', 'log_spectral_distance', 'perceptual_spee
 from .waveform_comparison import WaveformComparison, compare_waveforms
 
 __all__ += ['WaveformComparison', 'compare_waveforms']
+
+from .programme_levels import integrated_loudness, interpolated_peak
+
+__all__ += ['integrated_loudness', 'interpolated_peak']
