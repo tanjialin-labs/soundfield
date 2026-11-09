@@ -1,5 +1,6 @@
 """Complete audio-processing operations."""
 
+from .background_noise import suppress_background_noise
 from .gain_control import apply_automatic_gain
 from .array_enhancement import enhance_microphone_array
 from .source_separation import separate_sources, separate_stationary_pair
@@ -9,7 +10,7 @@ from .neural_enhancement import enhance_with_neural_masks
 from .conference_capture import ConferenceCaptureResult, capture_conference
 from .speech_tracking import track_speech_directions
 
-__all__ = ["apply_automatic_gain", "enhance_microphone_array", "separate_sources", "separate_stationary_pair",
+__all__ = ["suppress_background_noise", "apply_automatic_gain", "enhance_microphone_array", "separate_sources", "separate_stationary_pair",
            "enhance_with_spatial_mask", "reduce_reverberation", "suppress_correlated_noise",
            "classify_nearfield_audio", "route_audio_channels", "enhance_with_neural_masks",
            "ConferenceCaptureResult", "capture_conference", "track_speech_directions"]
