@@ -105,3 +105,31 @@ class SpeechActivityDetector:
         self.probabilities = probabilities[1]
         self.layer_outputs = (*outputs, probabilities.copy())
         return self.probabilities.copy()
+
+
+class SpeechActivityGate:
+    """Per-channel hysteresis with bounded hangover, measured in probability frames."""
+
+    def __init__(self, channel_count=1, *, onset_probability=.55, release_probability=.35, hold_frames=3):
+        from ..contracts import finite_scalar, nonnegative_integer
+        positive_integer(channel_count, 'channel_count')
+        finite_scalar(onset_probability, 'onset_probability', minimum=0, maximum=1)
+        finite_scalar(release_probability, 'release_probability', minimum=0, maximum=onset_probability)
+        nonnegative_integer(hold_frames, 'hold_frames')
+        self.onset = onset_probability
+        self.release = release_probability
+        self.hold = hold_frames
+        self._remaining = np.zeros(channel_count, int)
+        self._active = np.zeros(channel_count, bool)
+
+    def reset(self):
+        self._active.fill(False)
+        self._remaining.fill(0)
+
+    def process_frame(self, probability):
+        from ..contracts import unit_interval_array
+        values = unit_interval_array(probability, 'probability', self._active.shape)
+        present = values >= np.where(self._active, self.release, self.onset)
+        self._active = present | (self._remaining > 0)
+        self._remaining = np.where(present, self.hold, np.maximum(self._remaining-1, 0))
+        return self._active.copy()
