@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ..contracts import spectral_array, spectral_frame
+from ..contracts import finite_scalar, spectral_array, spectral_frame
 
 
 class FixedBeamBank:
@@ -48,6 +48,18 @@ class FixedBeamBank:
     @property
     def reference_count(self):
         return self._blocking_matrix.shape[2]
+
+    def calibrated(self, relative_response, *, maximum_gain_db=12.):
+        """Compensate measured complex microphone responses relative to a common reference."""
+        response = spectral_frame(relative_response, self.frequency_bin_count, self.microphone_count)
+        finite_scalar(maximum_gain_db, "maximum_gain_db", minimum=0, maximum=60)
+        amplitude = np.abs(response)
+        if np.any(amplitude == 0):
+            raise ValueError("microphone calibration requires a nonzero response in every bin")
+        limit = 10**(maximum_gain_db/20)
+        correction = response.conj()/amplitude * np.minimum(1/np.maximum(amplitude,1/limit),limit)
+        return FixedBeamBank(self._fixed_beam_weights*correction[:,:,None],
+                             self._blocking_matrix*correction[:,:,None,None])
 
     def project(self, spectrum_frame):
         """Return fixed beams (bins, beams) and references (bins, refs, beams)."""

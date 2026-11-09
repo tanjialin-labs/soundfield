@@ -18,7 +18,10 @@ def main():
     parser.add_argument('--half-width-degrees',type=float,default=30.)
     parser.add_argument('--fft-length',type=int,default=512)
     parser.add_argument('--sample-rate',type=int,default=16000)
+    parser.add_argument('--microphone-response',type=Path,help='Complex NPY response relative to the reference microphone')
     args=parser.parse_args()
+    if args.microphone_response and args.microphone_response.resolve()==args.output.resolve():
+        parser.error('output must differ from microphone response')
     options=dict(fft_length_samples=args.fft_length,sample_rate_hz=args.sample_rate)
     if args.geometry=='linear':
         positions=np.arange(args.microphones)*args.spacing_meters
@@ -34,6 +37,8 @@ def main():
                                     half_width_degrees=args.half_width_degrees, **options)
         angle = np.arange(args.microphones)*2*np.pi/args.microphones
         xyz = args.radius_meters*np.column_stack((np.cos(angle),np.sin(angle),np.zeros_like(angle)))
+    if args.microphone_response:
+        bank = bank.calibrated(np.load(args.microphone_response,allow_pickle=False))
     save_beam_bank(args.output, bank, sample_rate_hz=args.sample_rate, positions_meters=xyz)
 
 
