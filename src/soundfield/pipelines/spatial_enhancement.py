@@ -58,10 +58,13 @@ def reduce_reverberation(audio, config: WpeConfig | None = None, *, transform_co
         raise ValueError("audio, transform, and predictor dimensions must agree")
     spectrum = transform.analyze(samples)
     engine = WeightedPredictionDereverberator(config)
-    output = np.empty_like(spectrum)
-    for frame in range(spectrum.shape[1]):
-        output[:, frame] = engine.process_frame(spectrum[:, frame])
-    if compensate_delay and spectrum.shape[1]:
-        extended = np.concatenate((output, engine.flush()), axis=1)
-        output = extended[:, config.output_delay_frames:config.output_delay_frames + spectrum.shape[1]]
-    return transform.synthesize(output, length_samples=len(samples))
+    frames = spectrum.shape[1]
+    delay = engine.latency_frames if compensate_delay else 0
+    for frame in range(frames):
+        processed = engine.process_frame(spectrum[:, frame])
+        if frame >= delay:
+            spectrum[:, frame - delay] = processed
+    pending = min(delay, frames)
+    if pending:
+        spectrum[:, -pending:] = engine.flush()[:, -pending:]
+    return transform.synthesize(spectrum, length_samples=len(samples))
