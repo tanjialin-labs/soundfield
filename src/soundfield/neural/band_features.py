@@ -1,6 +1,7 @@
 """Quantized triangular-band features and temporal normalization."""
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 
@@ -39,6 +40,14 @@ class BandFeatureConfig:
         return self.band_count * (1 + self.left_context_frames + self.right_context_frames)
 
 
+@lru_cache(maxsize=32)
+def _band_coordinates(edges):
+    widths = np.diff(edges)
+    left = np.repeat(np.arange(len(widths)), widths)
+    fraction = (np.arange(edges[0], edges[-1]) - np.asarray(edges)[left]) / widths[left]
+    return left, fraction, round_away_from_zero(fraction * 32768)
+
+
 def triangular_band_energy(spectrum, band_edges, *, other_spectrum=None, quantized=True):
     """Accumulate cross energy; quantized inputs use the Q21 spectrum scale."""
     spectrum = np.asarray(spectrum, dtype=np.complex128)
@@ -49,24 +58,20 @@ def triangular_band_energy(spectrum, band_edges, *, other_spectrum=None, quantiz
             or edges[0] < 0 or edges[-1] > len(spectrum) or np.any(np.diff(edges) < 0)
             or not np.isfinite(spectrum).all() or not np.isfinite(other).all()):
         raise ValueError('spectra and band edges have incompatible values or shapes')
-    energy = np.zeros(len(edges))
-    for index, (start, stop) in enumerate(zip(edges[:-1], edges[1:])):
-        start, stop = int(start), int(stop)
-        width = stop - start
-        if not width:
-            continue
-        fraction = np.arange(width) / width
-        cross_real = other[start:stop].real * spectrum[start:stop].real
-        cross_imag = other[start:stop].imag * spectrum[start:stop].imag
-        if quantized:
-            fraction = round_away_from_zero(fraction * 32768)
-            cross = round_away_from_zero(cross_real / 32768) + round_away_from_zero(cross_imag / 32768)
-            energy[index] += np.sum(round_away_from_zero((32768 - fraction) * cross / 32768))
-            energy[index + 1] += np.sum(round_away_from_zero(fraction * cross / 32768))
-        else:
-            cross = cross_real + cross_imag
-            energy[index] += np.sum((1 - fraction) * cross)
-            energy[index + 1] += np.sum(fraction * cross)
+    edges = tuple(int(v) for v in edges)
+    left, fraction, quantized_fraction = _band_coordinates(edges)
+    band = slice(edges[0], edges[-1])
+    real = other[band].real * spectrum[band].real
+    imag = other[band].imag * spectrum[band].imag
+    if quantized:
+        cross = round_away_from_zero(real / 32768) + round_away_from_zero(imag / 32768)
+        lower = round_away_from_zero((32768 - quantized_fraction) * cross / 32768)
+        upper = round_away_from_zero(quantized_fraction * cross / 32768)
+    else:
+        cross = real + imag
+        lower, upper = (1 - fraction) * cross, fraction * cross
+    energy = (np.bincount(left, weights=lower, minlength=len(edges))
+              + np.bincount(left + 1, weights=upper, minlength=len(edges)))
     return round_away_from_zero(energy / 1024) if quantized else energy
 
 
@@ -77,11 +82,9 @@ def interpolate_band_gains(band_gains, band_edges, frequency_bin_count):
             or edges[0] < 0 or edges[-1] > frequency_bin_count or np.any(np.diff(edges) < 0)):
         raise ValueError('band gains and edges must agree and fit inside the spectrum')
     output = np.zeros(frequency_bin_count)
-    for index, (start, stop) in enumerate(zip(edges[:-1], edges[1:])):
-        start, stop = int(start), int(stop)
-        if stop > start:
-            fraction = np.arange(stop - start) / (stop - start)
-            output[start:stop] = (1 - fraction) * gains[index] + fraction * gains[index + 1]
+    edges = tuple(int(v) for v in edges)
+    left, fraction, _ = _band_coordinates(edges)
+    output[edges[0]:edges[-1]] = (1 - fraction) * gains[left] + fraction * gains[left+1]
     return output
 
 

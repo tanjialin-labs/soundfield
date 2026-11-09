@@ -24,6 +24,7 @@ class SpectralMaskEstimator:
         if model.input_count != config.feature_count or model.output_count < config.band_count:
             raise ValueError('network dimensions do not match the band configuration')
         self.config, self.model, self.channel_count = config, model, channel_count
+        self._band_edges = config.band_edges
         self.normalizers = [TemporalFeatureNormalizer(config, offset, scale) for _ in range(channel_count)]
         self.network_states = [model.create_state() for _ in range(channel_count)]
         self.reset()
@@ -40,10 +41,10 @@ class SpectralMaskEstimator:
         gains = np.zeros(spectrum.shape, dtype=float)
         probabilities = np.zeros(self.channel_count)
         for channel, (normalizer, network) in enumerate(zip(self.normalizers, self.network_states)):
-            energy = triangular_band_energy(spectrum[:, channel], self.config.band_edges) / 32
+            energy = triangular_band_energy(spectrum[:, channel], self._band_edges) / 32
             features = round_away_from_zero(np.log10(energy + 1/32) * 2**24)
             output = network.process_frame(normalizer.process_frame(features)) / 2**24
-            gains[:, channel] = interpolate_band_gains(output[:self.config.band_count], self.config.band_edges,
+            gains[:, channel] = interpolate_band_gains(output[:self.config.band_count], self._band_edges,
                                                        self.config.frequency_bin_count)
             probabilities[channel] = output[-1]
             self.band_energies[:, channel], self.features[:, channel] = energy, features
