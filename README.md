@@ -67,3 +67,7 @@ Keyword capture uses caller-supplied search vocabularies, transducer weights and
 ## State and resources
 
 Create one stateful processor per stream. Use its documented frame or block size, call `flush` where provided to drain the tail, and `reset` before starting an unrelated recording. Whole-recording separation needs the entire input before returning output. Supply recordings, model weights, microphone geometry and beam resources explicitly. The [examples](examples/) cover far-field calls, near-field capture, conferencing, beamforming, calibration and measurement.
+
+## License
+
+SoundField is a personal project by Tan Jialin. Its original code and documentation, including release 1.0.0, are available under the [MIT License](LICENSE). Third-party components retain their own [notices and terms](licenses/). The [STOI notice](licenses/short-time-intelligibility.txt) specifies non-commercial use. External models and optional dependencies have their own licenses.

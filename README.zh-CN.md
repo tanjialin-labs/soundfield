@@ -67,3 +67,7 @@ python examples/room_measurement.py --help
 ## 状态与资源
 
 每条流使用独立的处理器，按接口要求输入帧或音频块。提供 `flush` 的接口用它输出尾部，开始下一条独立录音前调用 `reset`。整段分离需要收齐输入后才返回音频。录音、模型权重、麦克风几何和波束资源均由调用方显式提供。[示例目录](examples/) 还包含远场通话、近场拾音、会议、波束形成、校准和声学测量入口。
+
+## 许可
+
+SoundField 是 Tan Jialin 创建和维护的个人项目。项目自有代码和文档（含 1.0.0 版）采用 [MIT 许可证](LICENSE)。第三方组件适用[各自的声明和条款](licenses/)，其中 [STOI 的声明](licenses/short-time-intelligibility.txt) 限定为非商业使用。外部模型和可选依赖的许可另行适用。

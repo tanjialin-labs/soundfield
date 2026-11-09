@@ -9,7 +9,7 @@ description = "Audio and microphone-array signal processing"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26", "scipy>=1.11"]
-license-files = ["licenses/*.txt"]
+license-files = ["LICENSE", "licenses/*.txt"]
 
 [project.urls]
 Repository = "https://github.com/tanjialin-labs/soundfield"
