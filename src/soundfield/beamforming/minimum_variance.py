@@ -19,6 +19,7 @@ class MvdrConfig:
     noise_memory_low: float = .98
     noise_memory_high: float = .85
     diagonal_loading: float = 1e-8
+    relative_loading: float = 0.0
 
     def __post_init__(self):
         positive_integer(self.frequency_bin_count, "frequency_bin_count")
@@ -30,6 +31,7 @@ class MvdrConfig:
         for name in ("speech_memory_low", "speech_memory_high", "noise_memory_low", "noise_memory_high"):
             finite_scalar(getattr(self, name), name, minimum=0, maximum=1)
         finite_scalar(self.diagonal_loading, "diagonal_loading", minimum=np.finfo(float).tiny)
+        finite_scalar(self.relative_loading, "relative_loading", minimum=0)
 
 
 class MvdrBeamformer:
@@ -89,7 +91,12 @@ class MvdrBeamformer:
             if orientation != 0:
                 direction = orientation * direction
             steering[frequency] = direction
-        inverse_direction = np.linalg.solve(noise_covariance + loading, steering[..., None])[..., 0]
+        # Keep the diagonal increment representable even for coherent high-level inputs.
+        mean_power = np.diagonal(noise_covariance, axis1=1, axis2=2).real.mean(axis=1)
+        relative_floor = max(config.relative_loading, 32 * config.microphone_count * np.finfo(float).eps)
+        increment = np.maximum(config.diagonal_loading, relative_floor * mean_power)
+        loaded_noise = noise_covariance + increment[:, None, None] * np.eye(config.microphone_count)
+        inverse_direction = np.linalg.solve(loaded_noise, steering[..., None])[..., 0]
         coefficients = inverse_direction / np.sum(steering.conj()*inverse_direction, axis=1, keepdims=True)
         output = np.sum(spectrum * coefficients.conj(), axis=1, keepdims=True)
         self._speech_covariance = speech_covariance
