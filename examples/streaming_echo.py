@@ -29,7 +29,10 @@ def main():
     parser.add_argument('--refine-echo', action='store_true',
                         help='refine residual echo using playback history and previously fitted weights')
     parser.add_argument('--align-reference', action='store_true', help='Track playback leading microphone capture')
+    parser.add_argument('--maximum-drift-ppm', type=float, default=0., help='Track relative capture clock drift during alignment')
     args = parser.parse_args()
+    if args.maximum_drift_ppm and not args.align_reference:
+        parser.error('clock drift tracking requires --align-reference')
     rate, microphone = read_audio(args.microphone)
     reference_rate, reference = read_audio(args.reference)
     if rate != reference_rate or len(microphone) != len(reference) or args.chunk_samples < 1:
@@ -42,7 +45,7 @@ def main():
                                         inactive_gain_policy='preserve_nearend' if args.preserve_nearend else 'wiener'))
     if args.refine_echo:
         config = replace(config, refinement=EchoRefinementConfig.predictive())
-    stream = EchoCancellationStream(config, sample_rate_hz=rate, reference_alignment=ReferenceAlignmentConfig() if args.align_reference else None)
+    stream = EchoCancellationStream(config, sample_rate_hz=rate, reference_alignment=ReferenceAlignmentConfig(maximum_drift_ppm=args.maximum_drift_ppm) if args.align_reference else None)
     chunks = []
     for start in range(0, len(microphone), args.chunk_samples):
         chunks.extend(stream.process_block(microphone[start:start+args.chunk_samples], reference[start:start+args.chunk_samples], start_sample=start))

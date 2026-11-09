@@ -1,4 +1,5 @@
 """Causal alignment of playback to microphone time using normalized correlation."""
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -14,7 +15,10 @@ class ReferenceAlignmentConfig:
     update_interval_blocks: int = 4
     minimum_correlation: float = .35
 
+    maximum_drift_ppm: float = 0.
+
     def __post_init__(self):
+        finite_scalar(self.maximum_drift_ppm, "maximum_drift_ppm", minimum=0, maximum=5000)
         for name in ('maximum_delay_samples', 'observation_samples', 'update_interval_blocks'):
             positive_integer(getattr(self, name), name)
         finite_scalar(self.minimum_correlation, 'minimum_correlation', minimum=np.finfo(float).eps, maximum=1.)
@@ -37,6 +41,10 @@ class PlaybackReferenceAligner:
         self.microphone = np.zeros(self.config.observation_samples)
         self.delay_samples = 0.
         self._blocks = 0
+        self._measurements = deque(maxlen=16)
+        self._rate = 0.
+        self._anchor = 0.
+        self._anchor_time = 0.
 
     def _measure(self):
         width = len(self.microphone)
@@ -61,6 +69,19 @@ class PlaybackReferenceAligner:
                 offset = .5*(right-left)/curvature
         return best + offset
 
+    def _observe(self, measured, time):
+        if self._measurements and abs(measured-self.delay_samples) > 3:
+            self._measurements.clear()
+            self._rate = 0.
+        self._measurements.append((time, measured))
+        self._anchor, self._anchor_time = measured, time
+        if len(self._measurements) >= 4:
+            times, delays = np.asarray(self._measurements).T
+            centered = times-times.mean()
+            bound = self.config.maximum_drift_ppm * 1e-6
+            self._rate = np.clip(np.dot(centered, delays-delays.mean()) / np.dot(centered, centered), -bound, bound)
+            self._anchor = delays.mean() + self._rate*(time-times.mean())
+
     def process_block(self, microphone, reference):
         mic, ref = audio_array(microphone), audio_array(reference)
         if len(mic) != self.hop or not mic.shape[1] or ref.shape != (self.hop, self.channels):
@@ -71,9 +92,19 @@ class PlaybackReferenceAligner:
         width = min(self.hop, len(self.microphone))
         self.microphone[:-width] = self.microphone[width:]
         self.microphone[-width:] = mic[-width:, 0]
+        end = self._blocks*self.hop
         if self._blocks*self.hop >= len(self.microphone) and self._blocks % self.config.update_interval_blocks == 0:
             measured = self._measure()
             if measured is not None:
-                self.delay_samples = measured
-        positions = len(self.reference)-self.hop + np.arange(self.hop) - self.delay_samples
+                if self.config.maximum_drift_ppm:
+                    self._observe(measured, end-(len(self.microphone)+1)/2)
+                else:
+                    self.delay_samples = measured
+        offsets = np.arange(self.hop)
+        delay = self.delay_samples
+        if self.config.maximum_drift_ppm:
+            delay = np.clip(self._anchor + self._rate*(end-self.hop+offsets-self._anchor_time),
+                            0, self.config.maximum_delay_samples)
+            self.delay_samples = float(delay[-1])
+        positions = len(self.reference)-self.hop + offsets - delay
         return np.column_stack([np.interp(positions, np.arange(len(self.reference)), ch) for ch in self.reference.T])
