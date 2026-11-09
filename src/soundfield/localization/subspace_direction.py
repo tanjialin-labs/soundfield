@@ -131,7 +131,7 @@ class SubspaceDirectionConfig:
 
 @dataclass(frozen=True)
 class DirectionEstimate:
-    azimuth_degrees: float
+    azimuth_degrees: float | None
     spatial_spectrum: np.ndarray
     searched_directions: np.ndarray
 
@@ -231,6 +231,9 @@ class SubspaceDirectionEstimator:
                 if config.strongest_active_beam_only and energies.max() > 0:
                     active = np.array([strongest])
         scores, scan = self._scan(microphone_block, weights, active, full_grid=search_all)
+        if not np.any(scores[scan]):
+            self._last_azimuth = None
+            return DirectionEstimate(None, np.abs(scores), scan.copy())
         if config.circular_search and noise_config is None:
             candidates = self._peaks(scores, scan)
             chosen = candidates[0]

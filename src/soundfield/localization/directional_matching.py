@@ -84,7 +84,7 @@ class DirectionalMatchingConfig:
 
 @dataclass(frozen=True)
 class DirectionalMatch:
-    azimuth_degrees: float
+    azimuth_degrees: float | None
     direction_scores: np.ndarray
     bin_coefficients: np.ndarray
     accepted_bins: np.ndarray
@@ -156,8 +156,8 @@ class DirectionalMatchingEstimator:
     def _estimate_block(self, block, activity):
         config = self.config
         values = block[slice(*config.analysis_band)]
-        mask = np.ones(values.shape[:2], bool)
         amplitude = np.abs(values)
+        mask = np.any(amplitude > 0, axis=2)
         if config.amplitude_ratio_bounds is not None:
             low, high = config.amplitude_ratio_bounds
             with np.errstate(divide="ignore", invalid="ignore"):
@@ -216,8 +216,8 @@ class DirectionalMatchingEstimator:
                     allowed[angles > 90] = False
                 elif left == 0 and right != 1:
                     allowed[angles < 90] = False
-        scores *= allowed
-        index = int(np.argmax(scores))
         if config.exclude_endfire_peaks:
-            index = int(np.clip(index, 1, len(scores) - 2))
-        return DirectionalMatch(float(angles[index]), scores, coefficients, mask)
+            allowed[[0, -1]] = False
+        scores *= allowed
+        angle = float(angles[np.argmax(scores)]) if np.any(scores > 0) else None
+        return DirectionalMatch(angle, scores, coefficients, mask)
