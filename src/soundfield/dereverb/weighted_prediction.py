@@ -176,21 +176,25 @@ class WeightedPredictionDereverberator:
         else:
             psd = ((1 - power_config.error_blend) * self._previous_output_power
                    + power_config.error_blend * np.mean(np.abs(residual)**1.5, axis=1, keepdims=True) + floor)
-        factor = self._forgetting_factor
         if config.covariance_update == "diagonal":
+            diagonal = self._inverse_covariance
             numerator = self._inverse_covariance * history
         else:
+            diagonal = self._inverse_covariance.diagonal(axis1=1, axis2=2)
             numerator = np.einsum("fkl,fl->fk", self._inverse_covariance, history)
+        # Limit inverse power when a frequency has little or no excitation.
+        loading = max(floor, np.finfo(float).eps)
+        factor = np.maximum(self._forgetting_factor, loading*np.max(diagonal.real, axis=1))
         denominator = factor * psd[:, 0] + np.sum(history.conj() * numerator, axis=1)
         kalman_gain = numerator / denominator[:, None]
         coefficient_update = kalman_gain[:, :, None] * residual[:, None, :].conj()
         self._coefficients += coefficient_update
         if config.covariance_update == "full":
             row = np.einsum("fk,fkl->fl", history.conj(), self._inverse_covariance)
-            self._inverse_covariance = (self._inverse_covariance - kalman_gain[:, :, None] * row[:, None, :]) / factor
+            self._inverse_covariance = (self._inverse_covariance - kalman_gain[:, :, None] * row[:, None, :]) / factor[:, None, None]
         else:
             diagonal_update = kalman_gain * history.conj()
-            self._inverse_covariance = (self._inverse_covariance - diagonal_update * self._inverse_covariance) / factor
+            self._inverse_covariance = (self._inverse_covariance - diagonal_update * self._inverse_covariance) / factor[:, None]
         if config.output_delay_frames:
             self._delayed_history[:, :-1] = self._delayed_history[:, 1:].copy()
             self._delayed_history[:, -1] = spectrum
