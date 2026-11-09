@@ -109,7 +109,10 @@ def _align_channels(recording: np.ndarray, sample_rate_hz: int, ref_audio: np.nd
         raise ValueError(f'clock skew {ppm:.1f} ppm > limit {maximum_clock_drift_ppm:.0f}')
     idx_play = np.arange(len(ref_audio), dtype=np.float64)
     sample_rec = start_pos + (idx_play - start_seg['start']) * scale
-    aligned = np.stack([np.interp(sample_rec, np.arange(len(recording)), recording[:, c], left=0.0, right=0.0) for c in range(recording.shape[1])], axis=1)
+    recording_grid = np.arange(len(recording), dtype=float)
+    aligned = np.empty((len(sample_rec), recording.shape[1]))
+    for channel in range(recording.shape[1]):
+        aligned[:,channel] = np.interp(sample_rec, recording_grid, recording[:,channel], left=0., right=0.)
     alignment = {'marker_reference_channel_1based': best_channel + 1, 'start_marker_recording_sample': int(start_pos), 'end_marker_recording_sample': int(end_pos), 'start_marker_ncc': round(start_corr, 4), 'end_marker_ncc': round(end_corr, 4), 'clock_recording_samples_per_playback_sample': scale, 'clock_drift_ppm': ppm, 'start_anchor_semantics': 'Playback start marker, estimated from filtered mic signal; cancels unknown common system/propagation delay'}
     return (aligned, alignment)
 
