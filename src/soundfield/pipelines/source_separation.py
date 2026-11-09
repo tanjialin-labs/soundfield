@@ -59,3 +59,28 @@ def _route_images(images, output, speaker_router, sample_rate_hz):
             speaker_router.process_block(images[span])
             output[span] = output[span][:, speaker_router.source_order]
     return output
+
+
+def separate_playback_pair(audio, playback_audio, *, sample_rate_hz=16000, reference_channel_index=1,
+                           speaker_router=None):
+    """Separate two recorded microphones with a synchronized playback reference at 16 kHz."""
+    from ..aec import EchoCancellationConfig, EchoFilterConfig, InputConditioningConfig, cancel_echo
+    from ..separation.playback_transfer import subtract_recorded_playback
+
+    microphones = audio_array(audio)
+    playback = audio_array(playback_audio)
+    nonnegative_integer(reference_channel_index, "reference_channel_index")
+    if (sample_rate_hz != 16000 or microphones.shape[1] != 2 or reference_channel_index >= 2
+            or len(playback) != len(microphones) or not 1 <= playback.shape[1] <= 3):
+        raise ValueError("two microphones and one to three aligned 16 kHz playback channels are required")
+    active = np.any(playback)
+    if active:
+        config = EchoCancellationConfig(input=InputConditioningConfig(microphone_count=2, reference_count=playback.shape[1]),
+                                        linear_filter=EchoFilterConfig(reference_count=playback.shape[1]), communication_filter=None)
+        microphones, _ = cancel_echo(microphones, playback, config)
+    images = separate_stationary_pair(microphones, reference_channel_index=reference_channel_index)
+    output = images
+    if active:
+        fitted = subtract_recorded_playback(images, playback)
+        output = .5*(images + fitted)
+    return _route_images(images, output, speaker_router, sample_rate_hz)

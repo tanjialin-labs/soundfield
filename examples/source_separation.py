@@ -7,6 +7,7 @@ from soundfield.enhancement import SeparationPostfilterConfig
 from soundfield.io import read_audio, write_audio
 from soundfield.pipelines import separate_sources, separate_stationary_pair
 from soundfield.separation import DemixingConfig
+from soundfield.pipelines.source_separation import separate_playback_pair
 
 
 def main():
@@ -19,7 +20,10 @@ def main():
     parser.add_argument('--speaker-model',type=Path)
     parser.add_argument('--enrolment',type=Path,nargs=2,metavar=('FIRST','SECOND'))
     parser.add_argument("--speech-enhancer",type=Path,help="Recurrent model for bounded source-image suppression")
+    parser.add_argument("--playback-reference", type=Path, help="Synchronized 16 kHz playback for recorded pair separation")
     arguments = parser.parse_args()
+    if arguments.playback_reference and (not arguments.stationary_pair or arguments.speech_enhancer or arguments.playback_reference.resolve()==arguments.output.resolve()):
+        parser.error("playback separation requires stationary pair mode, no additional enhancer and a distinct reference")
     if arguments.speech_enhancer and (not arguments.stationary_pair or arguments.speech_enhancer.resolve()==arguments.output.resolve()):
         parser.error("source-image suppression requires stationary pair mode and a distinct model path")
     if bool(arguments.enrolment) != bool(arguments.speaker_model):
@@ -44,7 +48,13 @@ def main():
         if arguments.speech_enhancer:
             from soundfield.neural.recurrent_spectrum import RecurrentSpectrumEnhancer
             enhancer = RecurrentSpectrumEnhancer(arguments.speech_enhancer)
-        output = separate_stationary_pair(audio,speech_enhancer=enhancer,speaker_router=router,sample_rate_hz=rate)
+        if arguments.playback_reference:
+            playback_rate, playback = read_audio(arguments.playback_reference)
+            if playback_rate != rate:
+                parser.error("playback and microphones must share a sample rate")
+            output = separate_playback_pair(audio, playback, sample_rate_hz=rate, speaker_router=router)
+        else:
+            output = separate_stationary_pair(audio, speech_enhancer=enhancer, speaker_router=router, sample_rate_hz=rate)
     else:
         postfilter = SeparationPostfilterConfig(frequency_bin_count=2049, channel_count=channels,
                 speech_start_bin=64, speech_stop_bin=897) if arguments.output_mode == "postfilter" else None

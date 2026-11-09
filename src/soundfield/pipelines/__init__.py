@@ -3,7 +3,7 @@
 from .background_noise import suppress_background_noise
 from .gain_control import apply_automatic_gain
 from .array_enhancement import enhance_microphone_array
-from .source_separation import separate_sources, separate_stationary_pair
+from .source_separation import separate_sources, separate_stationary_pair, separate_playback_pair
 from .spatial_enhancement import enhance_with_spatial_mask, reduce_reverberation, suppress_correlated_noise
 from .spatial_selection import classify_nearfield_audio, route_audio_channels
 from .neural_enhancement import enhance_with_neural_masks
@@ -23,3 +23,5 @@ from .neural_routing import NeuralRoutingResult, separate_and_route, select_wake
 from .reverberation_evaluation import ReverberationEvaluation, evaluate_reverberation
 
 __all__ += ['BeamSeparationResult', 'separate_beams', 'FarfieldCaptureResult', 'capture_farfield', 'estimate_aligned_masks', 'render_farfield_spectra', 'DirectionTrackingResult', 'DirectedCaptureResult', 'localize_speech', 'capture_directed_region', 'NearfieldCaptureResult', 'capture_nearfield', 'NeuralRoutingResult', 'separate_and_route', 'select_wakeword_events', 'ReverberationEvaluation', 'evaluate_reverberation']
+
+__all__ += ["separate_playback_pair"]
