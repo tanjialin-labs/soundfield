@@ -19,8 +19,11 @@ class ReferencePostfilterConfig:
     speech_start_bin: int = 8
     speech_stop_bin: int = 113
     noise_tracking: NoiseTrackingConfig = field(default_factory=NoiseTrackingConfig)
+    protect_target_power: bool = False
 
     def __post_init__(self):
+        if not isinstance(self.protect_target_power, bool):
+            raise ValueError("protect_target_power must be boolean")
         positive_integer(self.frequency_bin_count, "frequency_bin_count")
         nonnegative_integer(self.speech_start_bin, "speech_start_bin")
         positive_integer(self.speech_stop_bin, "speech_stop_bin")
@@ -116,4 +119,9 @@ class NoiseReferencePostfilter:
         self._posterior_snr = posterior
         self._speech_probability = probability
         self._gain = self._conditional_gain**probability * (10**(-.5))**(1 - probability)
+        if config.protect_target_power:
+            fraction = np.divide(reference_track.power, target_track.power, out=np.ones_like(power),
+                                 where=target_track.power > 0)
+            protected = 1 - np.sqrt(fraction)
+            self._gain = np.maximum(self._gain, protected)
         return target * self._gain
