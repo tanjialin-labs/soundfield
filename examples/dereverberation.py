@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--precision", choices=("single","double"), default="double")
     parser.add_argument("--current-frame", action="store_true")
     parser.add_argument("--compensate-delay", action="store_true")
+    parser.add_argument("--protect-short-decays", action="store_true", help="Preserve direct and rapidly decaying speech in a complete 16 kHz dual-microphone recording")
     arguments = parser.parse_args()
     if arguments.input.resolve() == arguments.output.resolve():
         parser.error("output must differ from input")
@@ -29,7 +30,8 @@ def main():
     config = factory(channel_count=audio.shape[1])
     config = replace(config, precision=arguments.precision, coherence_bypass=arguments.coherence_bypass, output_delay_frames=0 if arguments.current_frame else config.output_delay_frames,
                      postfilter=ResidualSuppressionConfig() if arguments.postfilter else None)
-    output = reduce_reverberation(audio, config, compensate_delay=arguments.compensate_delay)
+    output = reduce_reverberation(audio, config, compensate_delay=arguments.compensate_delay,
+                                  protect_short_decays=arguments.protect_short_decays,sample_rate_hz=rate)
     write_audio(arguments.output, output, rate)
 
 

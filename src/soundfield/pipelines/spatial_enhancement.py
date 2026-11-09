@@ -43,7 +43,8 @@ def suppress_correlated_noise(audio, config: CorrelationSuppressionConfig | None
     return transform.synthesize(output, length_samples=len(samples))
 
 
-def reduce_reverberation(audio, config: WpeConfig | None = None, *, transform_config=None, compensate_delay=False):
+def reduce_reverberation(audio, config: WpeConfig | None = None, *, transform_config=None, compensate_delay=False,
+                         protect_short_decays=False, sample_rate_hz=16000):
     """Return the input sample count, optionally draining and removing frame delay.
 
     Without delay compensation, leading delayed frames are retained. With it,
@@ -57,6 +58,14 @@ def reduce_reverberation(audio, config: WpeConfig | None = None, *, transform_co
     if samples.shape[1] != config.channel_count or transform.config.frequency_bin_count != config.frequency_bin_count:
         raise ValueError("audio, transform, and predictor dimensions must agree")
     spectrum = transform.analyze(samples)
+    dry = 0.
+    if protect_short_decays:
+        if sample_rate_hz != 16000 or config.frame_length_samples != 512 or samples.shape[1] != 2 or not compensate_delay:
+            raise ValueError("short-decay protection requires aligned 16 kHz two-microphone output on a 512-point transform")
+        from ..dereverb.recording_decay import dry_fraction
+        dry = dry_fraction(samples, spectrum)
+        if np.isscalar(dry) and dry == 1.:
+            return samples.copy()
     engine = WeightedPredictionDereverberator(config)
     frames = spectrum.shape[1]
     delay = engine.latency_frames if compensate_delay else 0
@@ -67,4 +76,5 @@ def reduce_reverberation(audio, config: WpeConfig | None = None, *, transform_co
     pending = min(delay, frames)
     if pending:
         spectrum[:, -pending:] = engine.flush()[:, -pending:]
-    return transform.synthesize(spectrum, length_samples=len(samples))
+    output = transform.synthesize(spectrum, length_samples=len(samples))
+    return output + dry*(samples-output) if protect_short_decays else output
