@@ -79,7 +79,8 @@ class ConditionalNoiseTracker:
             self.smoothed_power, self.conditional_power, self.noise_power = smooth.copy(), smooth.copy(), power.copy()
         else:
             self.smoothed_power = config.temporal_smoothing*self.smoothed_power+(1-config.temporal_smoothing)*smooth
-        if self.frame_count < 15:
+        initializing = self.frame_count == 1 or self.frame_count < config.minimum_window_frames
+        if initializing:
             self.minimum_power = self.smoothed_power.copy()
             self.active_minimum = self.smoothed_power.copy()
         else:
@@ -90,7 +91,7 @@ class ConditionalNoiseTracker:
         weight = np.convolve(inactive, [.25, .5, .25], mode='full')[1:len(power)+1]
         weighted = np.convolve(inactive*power, [.25, .5, .25], mode='full')[1:len(power)+1]
         conditional = np.divide(weighted, weight, out=self.conditional_power.copy(), where=weight>0)
-        if self.frame_count < 15:
+        if initializing:
             self.conditional_power = self.smoothed_power.copy()
             self.conditional_minimum = self.conditional_power.copy()
             self.conditional_active_minimum = self.conditional_power.copy()
