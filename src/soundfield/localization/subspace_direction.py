@@ -191,9 +191,8 @@ class SubspaceDirectionEstimator:
         self._frame_index += 1
         noise_config = config.noise_subspace
         if noise_config is None:
-            if beams is not None:
-                self._beam_history[:, :-1] = self._beam_history[:, 1:]
-                self._beam_history[:, -1] = beams
+            self._beam_history[:, :-1] = self._beam_history[:, 1:]
+            self._beam_history[:, -1] = 0 if beams is None else beams
         else:
             self._noise_eligible[:-1] = self._noise_eligible[1:]
             self._noise_eligible[-1] = True
@@ -220,9 +219,8 @@ class SubspaceDirectionEstimator:
                 raise ValueError("wake_confidence does not activate any search beam")
             partial = len(active) > 0 and len(inactive) > 0
             if config.strongest_active_beam_only or partial:
-                energies = np.zeros(config.beam_count)
-                energies[active] = np.mean(np.abs(self._beam_history[slice(*config.energy_band), :, active]) ** 2, axis=(0, 1))
-                strongest = int(np.argmax(energies))
+                energies = np.mean(np.abs(self._beam_history[slice(*config.energy_band), :, active]) ** 2, axis=(0, 1))
+                strongest = int(active[np.argmax(energies)])
                 if partial and config.beam_count > 1:
                     power = np.abs(self._beam_history) ** 2
                     ratios = np.empty_like(power)
@@ -230,9 +228,9 @@ class SubspaceDirectionEstimator:
                         for beam in range(config.beam_count):
                             ratios[:, :, beam] = power[:, :, beam] / np.max(np.delete(power, beam, axis=2), axis=2)
                     weights[ratios[:, :, strongest] <= np.max(ratios[:, :, inactive], axis=2) * config.interference_ratio] = 0
-                if config.strongest_active_beam_only:
+                if config.strongest_active_beam_only and energies.max() > 0:
                     active = np.array([strongest])
-        scores, scan = self._scan(microphone_block, weights, active)
+        scores, scan = self._scan(microphone_block, weights, active, full_grid=search_all)
         if config.circular_search and noise_config is None:
             candidates = self._peaks(scores, scan)
             chosen = candidates[0]
@@ -244,7 +242,7 @@ class SubspaceDirectionEstimator:
         self._last_azimuth = float(azimuth)
         return DirectionEstimate(float(azimuth), np.abs(scores), scan.copy())
 
-    def _scan(self, samples, weights, active):
+    def _scan(self, samples, weights, active, *, full_grid=False):
         config = self.config
         scan = np.zeros(config.direction_count, bool)
         extended = np.zeros_like(scan)
@@ -252,6 +250,8 @@ class SubspaceDirectionEstimator:
             center = int(round(beam * config.beam_width_degrees / config.grid_step_degrees))
             for mask, half in ((scan, config.search_half_width_steps), (extended, config.search_half_width_steps + config.smoothing_half_width_steps)):
                 mask[(center + np.arange(-half, half + 1)) % config.direction_count] = True
+        if full_grid:
+            scan[:] = extended[:] = True
         scores = np.zeros((config.direction_count, config.analysis_band[1] - config.analysis_band[0]), complex)
         noise_config = config.noise_subspace
         if noise_config is not None:
