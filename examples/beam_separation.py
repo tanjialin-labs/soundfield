@@ -20,7 +20,11 @@ def main():
     parser.add_argument('--beam-bank', type=Path, required=True)
     parser.add_argument('--stages', type=Path)
     parser.add_argument('--postfilter', action='store_true')
+    parser.add_argument('--postfilter-mask-exponent', type=float, default=1.,
+                        help='output amplitude exponent for the separation mask when postfiltering')
     args = parser.parse_args()
+    if not args.postfilter and args.postfilter_mask_exponent != 1.:
+        parser.error('--postfilter-mask-exponent requires --postfilter')
     inputs = {args.input.resolve(), args.beam_bank.resolve()}
     outputs = [args.output.resolve(), *([args.stages.resolve()] if args.stages else [])]
     if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
@@ -36,7 +40,8 @@ def main():
         energy_stop_bin=min(257, bins), weighting_strategy='blended_energy',
         output_mode='postfilter' if args.postfilter else 'reference_mask',
         postfilter=SeparationPostfilterConfig(frequency_bin_count=bins, channel_count=bank.beam_count,
-            speech_start_bin=postfilter.speech_start_bin, speech_stop_bin=postfilter.speech_stop_bin)
+            speech_start_bin=postfilter.speech_start_bin, speech_stop_bin=postfilter.speech_stop_bin,
+            mask_exponent=args.postfilter_mask_exponent)
         if args.postfilter else None)
     result = separate_beams(audio, bank, enhancement, separation)
     write_audio(args.output, result.audio, rate)

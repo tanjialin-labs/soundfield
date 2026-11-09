@@ -29,8 +29,10 @@ class SeparationPostfilterConfig:
     absence_gain: float = .056234
     power_epsilon: float = 1e-8
     noise_tracking: NoiseTrackingConfig = field(default_factory=NoiseTrackingConfig)
+    mask_exponent: float = 1.0
 
     def __post_init__(self):
+        finite_scalar(self.mask_exponent, "mask_exponent", minimum=np.finfo(float).eps, maximum=1)
         for name in ("frequency_bin_count", "channel_count", "speech_stop_bin"):
             positive_integer(getattr(self, name), name)
         nonnegative_integer(self.speech_start_bin, "speech_start_bin")
@@ -123,4 +125,5 @@ class SeparationGuidedPostfilter:
         self._noise_power = memory * self._noise_power + config.noise_bias * (1 - memory) * other_power
         self._posterior_snr = posterior
         self._speech_probability = probability
-        return ((1 - self._mixing_gain) * spectrum + self._mixing_gain * summed) * gain
+        output_gain = gain if config.mask_exponent == 1 else gain**config.mask_exponent
+        return ((1 - self._mixing_gain) * spectrum + self._mixing_gain * summed) * output_gain
