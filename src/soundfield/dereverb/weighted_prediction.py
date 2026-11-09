@@ -70,8 +70,8 @@ class WpeConfig:
         nonnegative_integer(self.output_delay_frames, "output_delay_frames")
         if self.frame_length_samples < 4 or self.frame_length_samples % 2:
             raise ValueError("frame_length_samples must be even and at least four")
-        if self.covariance_update not in ("full", "diagonal"):
-            raise ValueError("covariance_update must be full or diagonal")
+        if self.covariance_update not in ("full", "diagonal", "tap_block"):
+            raise ValueError("covariance_update must be full, diagonal or tap_block")
         finite_scalar(self.forgetting_factor, "forgetting_factor", minimum=np.finfo(float).tiny, maximum=1)
         finite_scalar(self.wiener_memory, "wiener_memory", minimum=0, maximum=1)
         if not isinstance(self.power, PredictionPowerConfig):
@@ -131,6 +131,9 @@ class WeightedPredictionDereverberator:
         diagonal = np.repeat(.5 ** np.arange(config.filter_length_frames), channels)
         if config.covariance_update == "diagonal":
             self._inverse_covariance = np.tile(diagonal.astype(complex), (bins, 1))
+        elif config.covariance_update == "tap_block":
+            blocks = diagonal.reshape(-1, channels)[:, :, None] * np.eye(channels)
+            self._inverse_covariance = np.broadcast_to(blocks, (bins, *blocks.shape)).astype(complex)
         else:
             self._inverse_covariance = np.broadcast_to(np.diag(diagonal), (bins, coefficients, coefficients)).astype(complex)
         self._power_history = np.zeros((bins, config.power.history_frames, channels))
@@ -179,6 +182,10 @@ class WeightedPredictionDereverberator:
         if config.covariance_update == "diagonal":
             diagonal = self._inverse_covariance
             numerator = self._inverse_covariance * history
+        elif config.covariance_update == "tap_block":
+            taps = history.reshape(config.frequency_bin_count, config.filter_length_frames, config.channel_count)
+            diagonal = self._inverse_covariance.diagonal(axis1=2, axis2=3).reshape(history.shape)
+            numerator = np.einsum("ftij,ftj->fti", self._inverse_covariance, taps).reshape(history.shape)
         else:
             diagonal = self._inverse_covariance.diagonal(axis1=1, axis2=2)
             numerator = np.einsum("fkl,fl->fk", self._inverse_covariance, history)
@@ -192,6 +199,11 @@ class WeightedPredictionDereverberator:
         if config.covariance_update == "full":
             row = np.einsum("fk,fkl->fl", history.conj(), self._inverse_covariance)
             self._inverse_covariance = (self._inverse_covariance - kalman_gain[:, :, None] * row[:, None, :]) / factor[:, None, None]
+        elif config.covariance_update == "tap_block":
+            # Keep each tap's microphone covariance and omit cross-tap blocks.
+            gain = kalman_gain.reshape(taps.shape)
+            row = numerator.reshape(taps.shape).conj()
+            self._inverse_covariance = (self._inverse_covariance - gain[..., None]*row[:, :, None, :]) / factor[:, None, None, None]
         else:
             diagonal_update = kalman_gain * history.conj()
             self._inverse_covariance = (self._inverse_covariance - diagonal_update * self._inverse_covariance) / factor[:, None]
