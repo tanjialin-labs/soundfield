@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 from dataclasses import asdict
-from ..enhancement import GainControlConfig, GainCurveConfig, GainSmoothingConfig
+from ..enhancement import GainControlConfig, GainCurveConfig, GainSmoothingConfig, SpeechLevelConfig
 
 
 def load_gain_settings(path):
@@ -13,6 +13,8 @@ def load_gain_settings(path):
     values = dict(values)
     values['curve'] = GainCurveConfig(**values.get('curve', {}))
     values['smoothing'] = GainSmoothingConfig(**values.get('smoothing', {}))
+    if values.get("speech_level") is not None:
+        values["speech_level"] = SpeechLevelConfig(**values["speech_level"])
     return GainControlConfig(**values)
 
 

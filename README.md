@@ -61,6 +61,12 @@ python examples/dereverberation.py input.wav output.wav --low-latency --compensa
 python examples/source_separation.py mixture.wav separated.wav --stationary-pair
 ```
 
+语音增益可按活动帧的 RMS 调节。默认目标为 −20 dBFS，最大提升为 24 dB，重建采样峰值上限为 −1 dBFS。频带语音掩码由调用方提供，低置信度与持续停顿会限制正增益。每个通道独立调节。
+
+```sh
+python examples/automatic_gain.py input.wav output.wav --speech-gains gains.npy --speech-level
+```
+
 ## 功能接口
 
 | 模块 | 主要功能 | 示例入口 |

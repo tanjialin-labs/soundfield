@@ -6,6 +6,7 @@ from numbers import Integral, Real
 
 import numpy as np
 
+from .speech_level import SpeechLevelConfig, SpeechLevelTracker
 from ..contracts import positive_integer, real_array, spectral_array
 
 
@@ -93,6 +94,7 @@ class GainControlConfig:
     equalizer_high_gain: float = 1.0
     curve: GainCurveConfig = field(default_factory=GainCurveConfig)
     smoothing: GainSmoothingConfig = field(default_factory=GainSmoothingConfig)
+    speech_level: SpeechLevelConfig | None = None
 
     def __post_init__(self):
         positive_integer(self.frame_length_samples, "frame_length_samples")
@@ -101,6 +103,8 @@ class GainControlConfig:
             raise ValueError("frame_length_samples must equal twice hop_length_samples")
         if not isinstance(self.curve, GainCurveConfig) or not isinstance(self.smoothing, GainSmoothingConfig):
             raise TypeError("curve and smoothing must use their configuration types")
+        if self.speech_level is not None and not isinstance(self.speech_level, SpeechLevelConfig):
+            raise TypeError("speech_level must be a SpeechLevelConfig")
         if self.activity_mode not in ("mean", "mean_square", "weighted_mean", "disabled"):
             raise ValueError("unknown activity_mode")
         for name in ("enable_reference_activity", "enable_equalizer"):
@@ -120,6 +124,11 @@ class GainControlConfig:
             _finite(getattr(self, name), name)
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must be nonnegative")
+
+    @classmethod
+    def speech_leveling(cls, *, sample_rate_hz=16000, target_rms_dbfs=-20.):
+        """Track active speech RMS on the half-overlapped square-root Hann grid."""
+        return cls(speech_level=SpeechLevelConfig(sample_rate_hz=sample_rate_hz, target_rms_dbfs=target_rms_dbfs))
 
     @property
     def frequency_bin_count(self):
@@ -165,6 +174,10 @@ class AutomaticGainControl:
 
     def reset(self):
         config = self.config
+        self._level_tracker = None
+        if config.speech_level is not None:
+            self._level_tracker = SpeechLevelTracker(config.speech_level, config.hop_length_samples,
+                                                   self._window, config.smoothing.initial_gain_db)
         self._state = _GainState(
             np.zeros(config.frame_length_samples),
             np.zeros(config.smoothing.long_activity_frames),
@@ -210,6 +223,14 @@ class AutomaticGainControl:
                 activity *= float(gains[-1, 0])
         reference_active = config.enable_reference_activity and _mean(reference) > config.reference_threshold
         state.activity = activity
+        if self._level_tracker is not None:
+            shaped = frequencies * (config.noise_gain_floor + (1-config.noise_gain_floor)*gains)
+            if config.enable_equalizer:
+                shaped *= self._equalizer[:, None]
+            state.output_gain_db = self._level_tracker.gain_for_frame(
+                shaped[:, 0], activity=activity, curve=config.curve, reference_active=reference_active)
+            state.gain_linear = 10**(state.output_gain_db/20)
+            return shaped * state.gain_linear
         state.audio_history[:-config.hop_length_samples] = state.audio_history[config.hop_length_samples:]
         state.audio_history[-config.hop_length_samples:] = samples[:, 0]
         level_db = float(20 * np.log10(np.max(np.abs(state.audio_history * self._window)) + 1e-10))

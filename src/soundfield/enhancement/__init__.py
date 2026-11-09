@@ -13,6 +13,10 @@ from .automatic_gain import AutomaticGainControl, GainControlConfig, GainCurveCo
 
 __all__ += ['AutomaticGainControl', 'GainControlConfig', 'GainCurveConfig', 'GainSmoothingConfig']
 
+from .speech_level import SpeechLevelConfig
+
+__all__ += ['SpeechLevelConfig']
+
 from .dynamic_range import DynamicRangeConfig, DynamicRangeController
 
 __all__ += ['DynamicRangeConfig', 'DynamicRangeController']
