@@ -19,6 +19,7 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--speech-gains", type=Path)
     source.add_argument("--estimate-gains", action="store_true")
+    parser.add_argument("--reference-microphone", type=int, help="preserve speech on this zero-based channel")
     arguments = parser.parse_args()
     resources = [arguments.input] + ([arguments.speech_gains] if arguments.speech_gains else [])
     if arguments.output.resolve() in [path.resolve() for path in resources]:
@@ -26,7 +27,7 @@ def main():
     rate, audio = read_audio(arguments.input)
     transform = ShortTimeFourierTransform()
     spectrum = transform.analyze(audio)
-    beamformer = MaskGuidedBeamformer(MaskGuidedConfig(MvdrConfig(microphone_count=audio.shape[1])))
+    beamformer = MaskGuidedBeamformer(MaskGuidedConfig(MvdrConfig(microphone_count=audio.shape[1], reference_microphone=arguments.reference_microphone)))
     separator = None
     if arguments.estimate_gains:
         separator = OnlineSourceSeparator(DemixingConfig(frequency_bin_count=257, channel_count=audio.shape[1]))

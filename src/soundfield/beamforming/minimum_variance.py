@@ -20,6 +20,7 @@ class MvdrConfig:
     noise_memory_high: float = .85
     diagonal_loading: float = 1e-8
     relative_loading: float = 0.0
+    reference_microphone: int | None = None
 
     def __post_init__(self):
         positive_integer(self.frequency_bin_count, "frequency_bin_count")
@@ -32,15 +33,19 @@ class MvdrConfig:
             finite_scalar(getattr(self, name), name, minimum=0, maximum=1)
         finite_scalar(self.diagonal_loading, "diagonal_loading", minimum=np.finfo(float).tiny)
         finite_scalar(self.relative_loading, "relative_loading", minimum=0)
+        if self.reference_microphone is not None:
+            nonnegative_integer(self.reference_microphone, "reference_microphone")
+            if self.reference_microphone >= self.microphone_count:
+                raise ValueError("reference_microphone must identify an input channel")
 
 
 class MvdrBeamformer:
     """Process (bins, microphones) spectra and return one channel.
 
     Speech and noise estimates are explicit inputs in the same amplitude units.
-    The principal left singular vector is oriented by its real inner product
-    with the loaded speech covariance's first column. No microphone amplitude
-    normalization is applied to that unit-length steering vector.
+    With a reference microphone, the output preserves the principal speech
+    component on that channel. An unresolved speech direction passes through
+    the reference channel. Steering vectors are unit length in both modes.
     """
 
     def __init__(self, config: MvdrConfig | None = None):
@@ -82,15 +87,24 @@ class MvdrBeamformer:
         speech_covariance = speech_memory * self._speech_covariance + (1 - speech_memory) * speech[:, :, None] * speech[:, None, :].conj()
         noise_covariance = noise_memory * self._noise_covariance + (1 - noise_memory) * noise[:, :, None] * noise[:, None, :].conj()
         loading = config.diagonal_loading * np.eye(config.microphone_count)
-        steering = np.empty_like(self._steering)
-        for frequency in range(config.frequency_bin_count):
-            loaded_speech = speech_covariance[frequency] + loading
-            left_vectors, _, _ = svd(loaded_speech, lapack_driver="gesvd", check_finite=False)
-            direction = left_vectors[:, 0]
-            orientation = np.sign(np.real(np.vdot(direction, loaded_speech[:, 0])))
-            if orientation != 0:
-                direction = orientation * direction
-            steering[frequency] = direction
+        reference = config.reference_microphone
+        if reference is None:
+            steering = np.empty_like(self._steering)
+            for frequency in range(config.frequency_bin_count):
+                loaded_speech = speech_covariance[frequency] + loading
+                left_vectors, _, _ = svd(loaded_speech, lapack_driver="gesvd", check_finite=False)
+                direction = left_vectors[:, 0]
+                orientation = np.sign(np.real(np.vdot(direction, loaded_speech[:, 0])))
+                if orientation != 0:
+                    direction = orientation * direction
+                steering[frequency] = direction
+        else:
+            eigenvalues, vectors = np.linalg.eigh(speech_covariance)
+            steering = vectors[:, :, -1]
+            unresolved = np.zeros(config.frequency_bin_count, dtype=bool)
+            if config.microphone_count > 1:
+                gap = eigenvalues[:, -1] - eigenvalues[:, -2]
+                unresolved = gap <= 32 * np.finfo(float).eps * eigenvalues[:, -1]
         # Keep the diagonal increment representable even for coherent high-level inputs.
         mean_power = np.diagonal(noise_covariance, axis1=1, axis2=2).real.mean(axis=1)
         relative_floor = max(config.relative_loading, 32 * config.microphone_count * np.finfo(float).eps)
@@ -98,6 +112,13 @@ class MvdrBeamformer:
         loaded_noise = noise_covariance + increment[:, None, None] * np.eye(config.microphone_count)
         inverse_direction = np.linalg.solve(loaded_noise, steering[..., None])[..., 0]
         coefficients = inverse_direction / np.sum(steering.conj()*inverse_direction, axis=1, keepdims=True)
+        if reference is not None:
+            # Back-project the unit-vector response to the reference microphone.
+            coefficients *= steering[:, reference:reference + 1].conj()
+            coefficients[unresolved] = 0
+            coefficients[unresolved, reference] = 1
+            steering[unresolved] = 0
+            steering[unresolved, reference] = 1
         output = np.sum(spectrum * coefficients.conj(), axis=1, keepdims=True)
         self._speech_covariance = speech_covariance
         self._noise_covariance = noise_covariance

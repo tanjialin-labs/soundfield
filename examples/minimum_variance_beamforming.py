@@ -16,6 +16,7 @@ def main():
     parser.add_argument("speech", type=Path)
     parser.add_argument("noise", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--reference-microphone", type=int, help="preserve speech on this zero-based channel")
     arguments = parser.parse_args()
     paths = (arguments.input, arguments.speech, arguments.noise)
     if arguments.output.resolve() in [path.resolve() for path in paths]:
@@ -27,7 +28,7 @@ def main():
         parser.error("input rates, sample counts, and channel counts must agree")
     transform = ShortTimeFourierTransform()
     spectrum, speech_spectrum, noise_spectrum = [transform.analyze(value) for value in (audio, speech, noise)]
-    engine = MvdrBeamformer(MvdrConfig(microphone_count=audio.shape[1]))
+    engine = MvdrBeamformer(MvdrConfig(microphone_count=audio.shape[1], reference_microphone=arguments.reference_microphone))
     output = np.empty((*spectrum.shape[:2], 1), dtype=np.complex128)
     for frame in range(spectrum.shape[1]):
         output[:, frame] = engine.process_frame(spectrum[:, frame], speech_spectrum[:, frame], noise_spectrum[:, frame])
