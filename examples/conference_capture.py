@@ -15,12 +15,13 @@ def main():
     parser.add_argument('output',type=Path)
     parser.add_argument('--model',type=Path,required=True)
     parser.add_argument('--output-channels',type=int,default=3)
+    parser.add_argument('--prefer-active-speakers',action='store_true')
     args=parser.parse_args()
     if args.output.resolve() in (args.input.resolve(),args.model.resolve()):
         parser.error('output must differ from input resources')
     rate,audio=read_audio(args.input)
     if rate!=16000:parser.error('conference capture requires 16000 Hz audio')
-    config=ConferenceSelectionConfig(channel_count=audio.shape[1],output_channel_count=args.output_channels)
+    config=ConferenceSelectionConfig(channel_count=audio.shape[1],output_channel_count=args.output_channels,prefer_active_speakers=args.prefer_active_speakers)
     result=capture_conference(audio,SpeechActivityModel.load(args.model),selection_config=config)
     write_audio(args.output,result.audio,rate)
 

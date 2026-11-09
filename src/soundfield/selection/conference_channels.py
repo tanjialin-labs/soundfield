@@ -13,8 +13,11 @@ class ConferenceSelectionConfig:
     output_channel_count: int = 3
     speech_threshold: float = 0.2
     history_frames: int = 10
+    prefer_active_speakers: bool = False
 
     def __post_init__(self):
+        if not isinstance(self.prefer_active_speakers, bool):
+            raise ValueError('prefer_active_speakers must be boolean')
         for name in ('channel_count', 'output_channel_count', 'history_frames'):
             positive_integer(getattr(self, name), name)
         finite_scalar(self.speech_threshold, 'speech_threshold', minimum=0, maximum=1)
@@ -51,7 +54,8 @@ class KurtosisChannelSelector:
         low_count = min(4, config.channel_count)
         common = np.intersect1d(rank[:low_count], speech_rank[:low_count])
         baseline = scores[common if common.size else rank[:low_count]].mean()
-        top = rank[-config.output_channel_count:]
+        priority = np.lexsort((scores, speech > config.speech_threshold)) if config.prefer_active_speakers else rank
+        top = priority[-config.output_channel_count:]
         previous = self.channel_history[-1].copy()
         selected = previous.copy()
         retained = np.isin(selected, top)
