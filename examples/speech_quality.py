@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--perceptual-mode',choices=('narrowband','wideband'),default='narrowband')
     parser.add_argument('--intelligibility-window',choices=('hann','hann_inset'),default='hann')
     parser.add_argument('--normalized-modulation',action='store_true')
+    parser.add_argument('--dnsmos-model',type=Path,help='Evaluate processed speech with a standard P.835 ONNX model')
     args=parser.parse_args()
     if args.output.resolve() in {args.reference.resolve(),args.processed.resolve()}:parser.error('output must differ from input resources')
     rate,clean=read_audio(args.reference);processed_rate,processed=read_audio(args.processed)
@@ -45,6 +46,10 @@ def main():
                 result[metric][name]=(value if np.isfinite(value) else None if np.isnan(value)
                                       else "+infinity" if value>0 else "-infinity")
         else:result[metric]=dict(score=modulation_energy_ratio(processed,rate,normalized=args.normalized_modulation).ratio,normalized=args.normalized_modulation)
+    if args.dnsmos_model:
+        if args.output.resolve()==args.dnsmos_model.resolve():parser.error('output must differ from the quality model')
+        from soundfield.metrics.speech_background_quality import SpeechBackgroundQualityEstimator
+        result['predicted_p835']=vars(SpeechBackgroundQualityEstimator(args.dnsmos_model).score(processed[:,None],rate))
     args.output.write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
 
 
