@@ -2,13 +2,14 @@
 
 import numpy as np
 
-from ..contracts import audio_array, real_array
+from ..contracts import audio_array, real_array, finite_scalar
+from ..metrics.programme_levels import interpolated_peak
 from ..enhancement.automatic_gain import AutomaticGainControl, GainControlConfig
 from ..transform.short_time_fourier import FourierConfig, ShortTimeFourierTransform
 
 
 def apply_automatic_gain(audio, speech_gains, *, config: GainControlConfig | None = None,
-                         reference_activity=None):
+                         reference_activity=None, peak_ceiling_dbtp=None, sample_rate_hz=16000):
     """Process all frames and return audio with the original sample count.
 
     speech_gains has shape (bins, frames, channels). Optional reference
@@ -46,4 +47,11 @@ def apply_automatic_gain(audio, speech_gains, *, config: GainControlConfig | Non
                 speech_gain=gains[:, frame_index, channel_index:channel_index + 1],
                 reference_activity=0.0 if reference is None else reference[start:start + hop],
             )
-    return transform.synthesize(output_spectra, length_samples=len(samples))
+    output = transform.synthesize(output_spectra, length_samples=len(samples))
+    if peak_ceiling_dbtp is not None:
+        finite_scalar(peak_ceiling_dbtp, "peak_ceiling_dbtp", minimum=-120, maximum=0)
+        ceiling = 10**(peak_ceiling_dbtp/20.)
+        peak = interpolated_peak(output,sample_rate_hz).max()
+        if peak > ceiling:
+            output *= ceiling/peak
+    return output
