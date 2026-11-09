@@ -28,13 +28,15 @@ def main():
     rate, audio = read_audio(args.input)
     bank = load_beam_bank(args.beam_bank)
     bins = bank.frequency_bin_count
+    postfilter = ReferencePostfilterConfig.for_grid(bins, rate) if args.postfilter else None
     enhancement = SidelobeConfig(adaptive_filter=NlmsConfig(frame_length_samples=2*(bins-1),
         sample_rate_hz=rate, reference_count=bank.reference_count, limit_stop_bin=min(257, bins)),
-        postfilter=ReferencePostfilterConfig(frequency_bin_count=bins) if args.postfilter else None)
+        postfilter=postfilter)
     separation = DemixingConfig(frequency_bin_count=bins, channel_count=bank.beam_count,
         energy_stop_bin=min(257, bins), weighting_strategy='blended_energy',
         output_mode='postfilter' if args.postfilter else 'reference_mask',
-        postfilter=SeparationPostfilterConfig(frequency_bin_count=bins, channel_count=bank.beam_count)
+        postfilter=SeparationPostfilterConfig(frequency_bin_count=bins, channel_count=bank.beam_count,
+            speech_start_bin=postfilter.speech_start_bin, speech_stop_bin=postfilter.speech_stop_bin)
         if args.postfilter else None)
     result = separate_beams(audio, bank, enhancement, separation)
     write_audio(args.output, result.audio, rate)

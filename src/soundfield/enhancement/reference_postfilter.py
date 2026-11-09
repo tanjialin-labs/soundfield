@@ -35,6 +35,16 @@ class ReferencePostfilterConfig:
         if not isinstance(self.noise_tracking, NoiseTrackingConfig):
             raise TypeError("noise_tracking must be a NoiseTrackingConfig")
 
+    @classmethod
+    def for_grid(cls, frequency_bin_count, sample_rate_hz):
+        """Place the 250–3500 Hz speech band on a one-sided FFT grid."""
+        positive_integer(frequency_bin_count, "frequency_bin_count")
+        positive_integer(sample_rate_hz, "sample_rate_hz")
+        bins_per_hz = 2 * (frequency_bin_count - 1) / sample_rate_hz
+        start = min(frequency_bin_count - 1, int(np.ceil(250 * bins_per_hz)))
+        stop = min(frequency_bin_count, max(start + 1, int(np.floor(3500 * bins_per_hz)) + 1))
+        return cls(frequency_bin_count=frequency_bin_count, speech_start_bin=start, speech_stop_bin=stop)
+
 
 class NoiseReferencePostfilter:
     """Enhance a single target spectrum using an explicit noise reference.

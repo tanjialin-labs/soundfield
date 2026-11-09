@@ -32,11 +32,12 @@ def main():
     bank = load_beam_bank(arguments.beam_bank)
     sample_rate, audio = read_audio(arguments.input)
     config = SidelobeConfig(
-        NlmsConfig(sample_rate_hz=sample_rate, reference_count=bank.reference_count),
+        NlmsConfig(frame_length_samples=2 * (bank.frequency_bin_count - 1), sample_rate_hz=sample_rate,
+                   reference_count=bank.reference_count),
         AdaptationGateConfig(arguments.strategy),
         enable_gate_attenuation=not arguments.disable_gate_attenuation,
         protect_target_bins=arguments.protect_target_bins,
-        postfilter=ReferencePostfilterConfig() if arguments.postfilter else None,
+        postfilter=ReferencePostfilterConfig.for_grid(bank.frequency_bin_count, sample_rate) if arguments.postfilter else None,
     )
     mask = np.load(arguments.speech_mask, allow_pickle=False) if arguments.speech_mask else None
     enhanced = enhance_microphone_array(audio, bank, config, speech_mask=mask)

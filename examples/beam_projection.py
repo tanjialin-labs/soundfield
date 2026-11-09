@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from soundfield import ShortTimeFourierTransform
+from soundfield import FourierConfig, ShortTimeFourierTransform
 from soundfield.beamforming import AdaptationGate, AdaptationGateConfig
 from soundfield.io import load_beam_bank, read_audio
 
@@ -20,7 +20,8 @@ def main():
         parser.error("output must differ from input resources")
     bank = load_beam_bank(arguments.beam_bank)
     _, audio = read_audio(arguments.input)
-    spectrum = ShortTimeFourierTransform().analyze(audio)
+    hop = bank.frequency_bin_count - 1
+    spectrum = ShortTimeFourierTransform(FourierConfig(2 * hop, hop)).analyze(audio)
     fixed = np.empty((*spectrum.shape[:2], bank.beam_count), dtype=complex)
     blocked = np.empty((*spectrum.shape[:2], bank.reference_count, bank.beam_count), dtype=complex)
     strength = np.empty(fixed.shape)

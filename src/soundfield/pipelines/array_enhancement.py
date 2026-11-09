@@ -14,7 +14,8 @@ def enhance_microphone_array(audio, bank, config, *, transform_config=None, spee
     Its frame count must equal the analysis frame count.
     """
     samples = audio_array(audio)
-    transform = ShortTimeFourierTransform(transform_config if transform_config is not None else FourierConfig())
+    hop = bank.frequency_bin_count - 1
+    transform = ShortTimeFourierTransform(transform_config or FourierConfig(2 * hop, hop))
     if samples.shape[1] != bank.microphone_count or transform.config.frequency_bin_count != bank.frequency_bin_count:
         raise ValueError("audio, transform, and beam bank dimensions must agree")
     spectrum = transform.analyze(samples)
