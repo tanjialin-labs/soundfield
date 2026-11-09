@@ -15,8 +15,11 @@ class ResidualSuppressionConfig:
     posterior_weight: float = .02
     prior_snr_floor: float = .0032
     noise_power_floor: float = 1e-7
+    use_coherent_power: bool = False
 
     def __post_init__(self):
+        if not isinstance(self.use_coherent_power, bool):
+            raise ValueError("use_coherent_power must be boolean")
         for name in ("correlation_memory", "posterior_weight"):
             finite_scalar(getattr(self, name), name, minimum=0, maximum=1)
         finite_scalar(self.leakage_scale, "leakage_scale", minimum=0)
@@ -61,6 +64,8 @@ class PredictionResidualFilter:
         with np.errstate(divide="ignore", invalid="ignore"):
             power_ratio = np.fmin(1, np.abs(self._residual_power / self._prediction_power))
             coherence = np.abs(self._cross_power / np.sqrt(self._residual_power * self._prediction_power))
+            if config.use_coherent_power:
+                coherence = coherence**2
             leakage = np.fmin(1, config.leakage_scale * power_ratio * coherence)
         noise = prediction_power * leakage + config.noise_power_floor
         posterior = np.minimum(residual_power / noise, 40)
@@ -68,6 +73,8 @@ class PredictionResidualFilter:
                            + (1 - config.posterior_weight) * self._previous_output_power / noise, config.prior_snr_floor)
         ratio = prior / (1 + prior)
         self._gain = np.minimum(1, ratio * spectral_amplitude_gain(ratio * posterior))
+        if config.use_coherent_power:
+            self._gain[prediction_power == 0] = 1.
         output = residual * self._gain
         self._previous_output_power = np.abs(output)**2
         self._initialized = True
