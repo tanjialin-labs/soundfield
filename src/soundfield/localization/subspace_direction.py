@@ -195,15 +195,18 @@ class SubspaceDirectionEstimator:
             self._beam_history[:, -1] = 0 if beams is None else beams
         else:
             self._noise_eligible[:-1] = self._noise_eligible[1:]
-            self._noise_eligible[-1] = True
-            if self._frame_index > noise_config.warmup_frames and reference_is_quiet and self._noise_eligible[0]:
+            self._noise_eligible[-1] = reference_is_quiet
+            if confidence is not None:
+                self._noise_eligible[-noise_config.event_frames:] = False
+            sample = noise_config.noise_sample_index
+            if (self._frame_index > noise_config.warmup_frames and reference_is_quiet
+                    and self._frame_index >= len(self._noise_eligible) - sample and self._noise_eligible[sample]):
                 self._noise_history[:, :-1] = self._noise_history[:, 1:]
-                self._noise_history[:, -1] = self._microphone_history[:, noise_config.noise_sample_index]
+                self._noise_history[:, -1] = self._microphone_history[:, sample]
         if confidence is None:
             return None
         microphone_block = self._microphone_history
         if noise_config is not None:
-            self._noise_eligible[-noise_config.event_frames:] = False
             microphone_block = microphone_block[:, -noise_config.event_frames:]
         weights = np.ones(microphone_block.shape[:2])
         energy_db = 10 * np.log10(np.maximum(np.mean(np.abs(microphone_block) ** 2, axis=(0, 1)), .0001))
