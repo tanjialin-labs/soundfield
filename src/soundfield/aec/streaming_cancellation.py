@@ -38,7 +38,9 @@ class EchoCancellationStream:
     one stream; flush closes it until reset.
     """
 
-    def __init__(self, config=None, *, sample_rate_hz=16000, reference_alignment=None):
+    def __init__(self, config=None, *, sample_rate_hz=16000, reference_alignment=None, maximum_gap_samples=0):
+        nonnegative_integer(maximum_gap_samples, 'maximum_gap_samples')
+        self.maximum_gap_samples = maximum_gap_samples
         positive_integer(sample_rate_hz, 'sample_rate_hz')
         if sample_rate_hz != 16000:
             raise ValueError('echo streaming requires a 16000 Hz sample grid')
@@ -99,7 +101,7 @@ class EchoCancellationStream:
                               start, self._received, self.sample_rate_hz, released_on_flush),)
 
     def process_block(self, microphone_audio, reference_audio, *, start_sample):
-        """Accept paired chunks at the next input sample; reject gaps and overlaps.
+        """Accept paired chunks at the next input sample; fill configured timestamp gaps with silence.
 
         Returned availability boundaries describe the earliest required input,
         independent of the caller's chunk size or wall-clock scheduling.
@@ -108,12 +110,17 @@ class EchoCancellationStream:
             raise ValueError('stream is closed; reset before supplying more audio')
         nonnegative_integer(start_sample, 'start_sample')
         microphone, reference = audio_array(microphone_audio), audio_array(reference_audio)
-        if start_sample != self._received:
+        gap = start_sample-self._received
+        if gap < 0 or gap > self.maximum_gap_samples:
             raise ValueError('start_sample must equal received_samples')
         if (len(microphone) != len(reference) or microphone.shape[1] != self.config.input.microphone_count
                 or reference.shape[1] != self.config.input.reference_count):
             raise ValueError('paired chunks must have equal lengths and configured channel counts')
-        outputs, offset = [], 0
+        outputs = []
+        if gap:
+            outputs.extend(self.process_block(np.zeros((gap, microphone.shape[1])), np.zeros((gap, reference.shape[1])),
+                                              start_sample=self._received))
+        offset = 0
         while offset < len(microphone):
             count = min(self.latency_samples-self._filled, len(microphone)-offset)
             stop = self._filled+count
