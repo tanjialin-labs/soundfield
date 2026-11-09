@@ -6,6 +6,8 @@ import math
 from pathlib import Path
 
 from soundfield import ShortTimeFourierTransform
+import numpy as np
+from soundfield.localization.phase_scan import PhaseDirectionScanner
 from soundfield.io import read_audio
 from soundfield.localization import DirectionalMatchingConfig, DirectionalMatchingEstimator, SubspaceDirectionConfig, SubspaceDirectionEstimator, circular_array, linear_array
 
@@ -14,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--method", choices=("subspace", "matching"), default="subspace")
+    parser.add_argument("--method", choices=("subspace", "matching", "phase_scan"), default="subspace")
     parser.add_argument("--array", choices=("linear", "circular"), default="linear")
     parser.add_argument("--radius-meters", type=float, default=.035)
     parser.add_argument("--spacing-meters", type=float, default=.035)
@@ -22,8 +24,9 @@ def main():
     parser.add_argument("--frequency-voting", choices=("raw", "normalized", "coherent"), default="raw",
                         help="combine subspace scores across frequency")
     parser.add_argument("--band-hz", type=float, nargs=2, metavar=("LOW", "HIGH"))
+    parser.add_argument("--maximum-sources",type=int,default=2,help="Maximum candidates for phase scanning")
     arguments = parser.parse_args()
-    if arguments.method == "matching" and arguments.frequency_voting != "raw":
+    if arguments.method != "subspace" and arguments.frequency_voting != "raw":
         parser.error("frequency voting requires the subspace method")
     if arguments.input.resolve() == arguments.output.resolve():
         parser.error("output must differ from input")
@@ -39,6 +42,17 @@ def main():
         band = (math.ceil(low * 512 / rate), math.floor(high * 512 / rate) + 1)
         if band[0] >= band[1]:
             parser.error("band must include an FFT bin")
+    if arguments.method == "phase_scan":
+        if arguments.block_frames < 1:
+            parser.error("block-frames must be positive")
+        spectrum = ShortTimeFourierTransform().analyze(audio)[slice(*band)]
+        scanner = PhaseDirectionScanner(geometry,np.arange(*band)*rate/512,np.arange(0,360 if circular else 181,5))
+        estimates = []
+        for start in range(0,spectrum.shape[1],arguments.block_frames):
+            result = scanner.estimate(spectrum[:,start:start+arguments.block_frames],maximum_sources=arguments.maximum_sources)
+            estimates.append(dict(start_frame=start, azimuths_degrees=result.azimuths_degrees,vote_fractions=result.vote_fractions))
+        arguments.output.write_text(json.dumps(estimates,indent=2,allow_nan=False)+"\n")
+        return
     if arguments.method == "subspace":
         grid = dict(beam_count=4, directions_per_beam=18, beam_width_degrees=90, grid_step_degrees=5,
                     azimuth_offset_degrees=0, search_half_width_steps=9, circular_search=True) if circular else {}
