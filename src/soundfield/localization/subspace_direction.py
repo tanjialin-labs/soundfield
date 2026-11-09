@@ -222,7 +222,9 @@ class SubspaceDirectionEstimator:
                 active = np.flatnonzero(confidence >= config.active_confidence_ratio * confidence_threshold)
                 inactive = np.flatnonzero(confidence < config.inactive_confidence_ratio * confidence_threshold)
             if not len(active):
-                raise ValueError("wake_confidence does not activate any search beam")
+                self._last_azimuth = None
+                scores = np.zeros((config.direction_count, config.analysis_band[1] - config.analysis_band[0]))
+                return DirectionEstimate(None, scores, np.zeros(config.direction_count, dtype=bool))
             partial = len(active) > 0 and len(inactive) > 0
             if config.strongest_active_beam_only or partial:
                 energies = np.mean(np.abs(self._beam_history[slice(*config.energy_band), :, active]) ** 2, axis=(0, 1))
