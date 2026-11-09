@@ -34,6 +34,7 @@ class GainCurveConfig:
     target_offset_db: float = 0.0
     enable_speech_gate: bool = True
     speech_threshold: float = 0.35
+    allow_quiet_boost: bool = False
 
     def __post_init__(self):
         for name in ("lower_level_db", "upper_level_db", "quiet_output_db", "expansion_ratio",
@@ -46,6 +47,8 @@ class GainCurveConfig:
         if not isinstance(self.enable_speech_gate, bool):
             raise ValueError("enable_speech_gate must be boolean")
         _probability(self.speech_threshold, "speech_threshold")
+        if not isinstance(self.allow_quiet_boost, bool):
+            raise ValueError("allow_quiet_boost must be boolean")
 
 
 @dataclass(frozen=True)
@@ -223,7 +226,7 @@ class AutomaticGainControl:
     def _update_gain(self, level_db, reference_active):
         state, curve, smoothing = self._state, self.config.curve, self.config.smoothing
         if reference_active or level_db < curve.lower_level_db:
-            target_db = curve.quiet_output_db
+            target_db = curve.quiet_output_db if curve.allow_quiet_boost else min(level_db, curve.quiet_output_db)
         elif curve.enable_speech_gate and state.short_activity <= curve.speech_threshold:
             target_db = level_db
         elif level_db < curve.upper_level_db:
