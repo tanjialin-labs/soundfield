@@ -65,6 +65,7 @@ class WpeConfig:
     postfilter: ResidualSuppressionConfig | None = None
     preserve_early_speech: bool = False
     coherence_bypass: bool = False
+    precision: str = "double"
 
     def __post_init__(self):
         for name in ("frame_length_samples", "channel_count", "prediction_delay_frames", "filter_length_frames"):
@@ -72,6 +73,8 @@ class WpeConfig:
         nonnegative_integer(self.output_delay_frames, "output_delay_frames")
         if self.frame_length_samples < 4 or self.frame_length_samples % 2:
             raise ValueError("frame_length_samples must be even and at least four")
+        if self.precision not in ("single", "double"):
+            raise ValueError("precision must be single or double")
         if not isinstance(self.coherence_bypass, bool) or self.coherence_bypass and self.channel_count < 2:
             raise ValueError("coherence bypass requires a microphone pair")
         if not isinstance(self.preserve_early_speech, bool):
@@ -169,26 +172,27 @@ class WeightedPredictionDereverberator:
     def reset(self):
         config = self.config
         bins, channels = config.frequency_bin_count, config.channel_count
+        dtype = np.complex64 if config.precision == "single" else np.complex128
         history_length = config.filter_length_frames + config.prediction_delay_frames
         coefficients = channels * config.filter_length_frames
-        self._history = np.zeros((bins, history_length, channels), dtype=np.complex128)
-        self._delayed_history = np.zeros((bins, history_length + config.output_delay_frames, channels), dtype=np.complex128)
-        self._coefficients = np.zeros((bins, coefficients, channels), dtype=np.complex128)
+        self._history = np.zeros((bins, history_length, channels), dtype=dtype)
+        self._delayed_history = np.zeros((bins, history_length + config.output_delay_frames, channels), dtype=dtype)
+        self._coefficients = np.zeros((bins, coefficients, channels), dtype=dtype)
         diagonal = np.repeat(.5 ** np.arange(config.filter_length_frames), channels)
         if config.covariance_update == "diagonal":
-            self._inverse_covariance = np.tile(diagonal.astype(complex), (bins, 1))
+            self._inverse_covariance = np.tile(diagonal.astype(dtype), (bins, 1))
         elif config.covariance_update == "tap_block":
             blocks = diagonal.reshape(-1, channels)[:, :, None] * np.eye(channels)
-            self._inverse_covariance = np.broadcast_to(blocks, (bins, *blocks.shape)).astype(complex)
+            self._inverse_covariance = np.broadcast_to(blocks, (bins, *blocks.shape)).astype(dtype)
         else:
-            self._inverse_covariance = np.broadcast_to(np.diag(diagonal), (bins, coefficients, coefficients)).astype(complex)
+            self._inverse_covariance = np.broadcast_to(np.diag(diagonal), (bins, coefficients, coefficients)).astype(dtype)
         self._power_history = np.zeros((bins, config.power.history_frames, channels))
         self._clean_power = np.zeros((bins, channels))
         self._early_speech_mixer = _EarlySpeechMixer(bins, config.coherence_bypass) if config.preserve_early_speech or config.coherence_bypass else None
         self._psd = np.zeros((bins, 1))
         self._previous_output_power = np.zeros((bins, 1))
         self._wiener_gain = np.zeros((bins, 1))
-        self._output = np.zeros((bins, channels), dtype=np.complex128)
+        self._output = np.zeros((bins, channels), dtype=dtype)
         self._forgetting_factor = config.forgetting_factor
         self._update_error = 0.0
         self._smoothed_output_power = 0.0
@@ -203,6 +207,8 @@ class WeightedPredictionDereverberator:
             raise RuntimeError("reset is required before processing after flush")
         config = self.config
         spectrum = spectral_frame(spectrum_frame, config.frequency_bin_count, config.channel_count)
+        if config.precision == "single":
+            spectrum = spectrum.astype(np.complex64)
         self._history[:, :-1] = self._history[:, 1:].copy()
         self._history[:, -1] = spectrum
         history = self._history[:, :config.filter_length_frames].reshape(config.frequency_bin_count, -1)
@@ -254,6 +260,8 @@ class WeightedPredictionDereverberator:
         else:
             diagonal_update = kalman_gain * history.conj()
             self._inverse_covariance = (self._inverse_covariance - diagonal_update * self._inverse_covariance) / factor[:, None]
+        if config.precision == "single":
+            self._inverse_covariance = self._inverse_covariance.astype(np.complex64, copy=False)
         if config.output_delay_frames:
             self._delayed_history[:, :-1] = self._delayed_history[:, 1:].copy()
             self._delayed_history[:, -1] = spectrum
