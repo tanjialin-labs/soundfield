@@ -9,6 +9,7 @@ import numpy as np
 
 from soundfield.aec import (CommunicationPostfilterConfig, EchoCancellationConfig, EchoCancellationStream,
                             EchoFilterConfig, EchoRefinementConfig, InputConditioningConfig, nonlinear_playback_reference)
+from soundfield.aec.reference_alignment import ReferenceAlignmentConfig
 from soundfield.io import read_audio, write_audio
 
 
@@ -27,6 +28,7 @@ def main():
                         help='expand mono playback to model loudspeaker saturation at this normalized amplitude')
     parser.add_argument('--refine-echo', action='store_true',
                         help='refine residual echo using playback history and previously fitted weights')
+    parser.add_argument('--align-reference', action='store_true', help='Track playback leading microphone capture')
     args = parser.parse_args()
     rate, microphone = read_audio(args.microphone)
     reference_rate, reference = read_audio(args.reference)
@@ -40,7 +42,7 @@ def main():
                                         inactive_gain_policy='preserve_nearend' if args.preserve_nearend else 'wiener'))
     if args.refine_echo:
         config = replace(config, refinement=EchoRefinementConfig.predictive())
-    stream = EchoCancellationStream(config, sample_rate_hz=rate)
+    stream = EchoCancellationStream(config, sample_rate_hz=rate, reference_alignment=ReferenceAlignmentConfig() if args.align_reference else None)
     chunks = []
     for start in range(0, len(microphone), args.chunk_samples):
         chunks.extend(stream.process_block(microphone[start:start+args.chunk_samples], reference[start:start+args.chunk_samples], start_sample=start))

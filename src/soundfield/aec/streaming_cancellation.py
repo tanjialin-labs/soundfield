@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..contracts import audio_array, nonnegative_integer, positive_integer
+from .reference_alignment import PlaybackReferenceAligner
 from .echo_cancellation import AcousticEchoCanceller, EchoCancellationConfig
 
 
@@ -32,12 +33,12 @@ class EchoCancellationStream:
     """Process contiguous, synchronized microphone and playback chunks at 16 kHz.
 
     Input chunks may have any length. Outputs have at most one hop each and
-    retain the recording's sample positions. No resampling, reference delay
-    correction or external mask scheduling is performed. One instance owns
+    retain the recording's sample positions. Optional reference alignment uses the first microphone
+    and a bounded playback history. One instance owns
     one stream; flush closes it until reset.
     """
 
-    def __init__(self, config=None, *, sample_rate_hz=16000):
+    def __init__(self, config=None, *, sample_rate_hz=16000, reference_alignment=None):
         positive_integer(sample_rate_hz, 'sample_rate_hz')
         if sample_rate_hz != 16000:
             raise ValueError('echo streaming requires a 16000 Hz sample grid')
@@ -50,6 +51,8 @@ class EchoCancellationStream:
         self._processor = AcousticEchoCanceller(self.config)
         self._microphone = np.zeros((self.latency_samples, self.config.input.microphone_count))
         self._reference = np.zeros((self.latency_samples, self.config.input.reference_count))
+        self._aligner = (PlaybackReferenceAligner(reference_alignment, self.latency_samples, self.config.input.reference_count)
+                         if reference_alignment is not None else None)
         self.reset()
 
     @property
@@ -74,13 +77,16 @@ class EchoCancellationStream:
     def reset(self):
         """Clear processing state and restart the sample timeline at zero."""
         self._processor.reset()
+        if self._aligner is not None:
+            self._aligner.reset()
         self._microphone.fill(0)
         self._reference.fill(0)
         self._received = self._emitted = self._filled = self._blocks = 0
         self._closed = False
 
     def _process_hop(self, released_on_flush):
-        result = self._processor.process_block(self._microphone, self._reference)
+        reference = self._aligner.process_block(self._microphone, self._reference) if self._aligner is not None else self._reference
+        result = self._processor.process_block(self._microphone, reference)
         self._blocks += 1
         self._filled = 0
         start = (self._blocks-2)*self.latency_samples
