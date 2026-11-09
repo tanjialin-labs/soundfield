@@ -96,7 +96,12 @@ class NormalizedLmsCanceller:
         self._power_history[:, :, 1:] = self._power_history[:, :, :-1].copy()
         self._power_history[:, :, 0] = np.abs(reference)**2
         reference_power = np.sum(self._power_history, axis=2)
-        normalized_residual = residual / (reference_power + regularization)
+        denominator = reference_power + regularization
+        normalized_residual = residual / denominator
+        if config.reference_count > 1:
+            # Bound the combined correction along the stacked reference vector.
+            response = config.step_size * strength * np.sum(reference_power / denominator, axis=1, keepdims=True)
+            normalized_residual /= np.maximum(response / 1.8, 1.0)
         self._coefficients += (config.step_size * strength[:, :, None]
                                * normalized_residual[:, :, None] * self._reference_history.conj())
         if config.coefficient_limit is not None:
