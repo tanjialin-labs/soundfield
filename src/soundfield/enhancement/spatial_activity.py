@@ -15,8 +15,12 @@ class SpatialActivityConfig:
     initial_accumulator: float = 0
     vote_history_frames: int = 5
     vote_threshold: float = 0.4
+    competing_vote_fraction: float = 0.
+    inactive_gain: float = 0.
 
     def __post_init__(self):
+        for name in ('competing_vote_fraction','inactive_gain'):
+            finite_scalar(getattr(self,name), name, minimum=0, maximum=1)
         positive_integer(self.vote_history_frames, 'vote_history_frames')
         for name in ('accumulator_limit', 'decay_per_frame', 'activation_threshold',
                      'initial_accumulator', 'vote_threshold'):
@@ -32,10 +36,13 @@ class SpatialActivityGate:
         self.accumulator = self.config.initial_accumulator
         self.vote_history = np.zeros(self.config.vote_history_frames)
 
-    def process_frame(self, spatial_evidence):
+    def process_frame(self, spatial_evidence, *, observed_bins=None):
         finite_scalar(spatial_evidence, 'spatial_evidence', minimum=0)
+        if observed_bins is not None:
+            finite_scalar(observed_bins, 'observed_bins', minimum=spatial_evidence)
+            spatial_evidence -= self.config.competing_vote_fraction*(observed_bins-spatial_evidence)
         self.accumulator = min(max(self.accumulator + spatial_evidence
                                    - self.config.decay_per_frame, 0), self.config.accumulator_limit)
         self.vote_history[:-1] = self.vote_history[1:]
         self.vote_history[-1] = self.accumulator > self.config.activation_threshold
-        return float(self.vote_history.sum() > self.config.vote_threshold)
+        return 1. if self.vote_history.sum() > self.config.vote_threshold else self.config.inactive_gain

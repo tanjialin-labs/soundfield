@@ -101,7 +101,8 @@ def capture_directed_region(audio, beam_bank, enhancement_config, separation_con
                 distances = np.minimum(distances, directions - distances)
             region = distances <= half_width_steps
             evidence[frame] = np.count_nonzero(np.sum(np.abs(match.bin_coefficients[:, :, region]), axis=(1, 2)))
-        gain = gate.process_frame(float(evidence[frame]) if frame < frames else 0.)
+        gain = (gate.process_frame(float(evidence[frame]), observed_bins=np.count_nonzero(match.accepted_bins))
+                if frame < frames else gate.process_frame(0.))
         target = max(frame-delay, 0)
         if target < frames:
             gains[target] = gain
