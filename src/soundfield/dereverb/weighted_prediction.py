@@ -64,6 +64,7 @@ class WpeConfig:
     adaptive_forgetting: AdaptiveForgettingConfig | None = field(default_factory=AdaptiveForgettingConfig)
     postfilter: ResidualSuppressionConfig | None = None
     preserve_early_speech: bool = False
+    coherence_bypass: bool = False
 
     def __post_init__(self):
         for name in ("frame_length_samples", "channel_count", "prediction_delay_frames", "filter_length_frames"):
@@ -71,6 +72,8 @@ class WpeConfig:
         nonnegative_integer(self.output_delay_frames, "output_delay_frames")
         if self.frame_length_samples < 4 or self.frame_length_samples % 2:
             raise ValueError("frame_length_samples must be even and at least four")
+        if not isinstance(self.coherence_bypass, bool) or self.coherence_bypass and self.channel_count < 2:
+            raise ValueError("coherence bypass requires a microphone pair")
         if not isinstance(self.preserve_early_speech, bool):
             raise TypeError("preserve_early_speech must be boolean")
         if self.covariance_update not in ("full", "diagonal", "tap_block"):
@@ -98,7 +101,8 @@ class WpeConfig:
 class _EarlySpeechMixer:
     """Protect spatially coherent speech when the input envelope has a low noise floor."""
 
-    def __init__(self, bins):
+    def __init__(self, bins, coherence_bypass=False):
+        self.coherence_bypass = coherence_bypass
         start = max(1, bins // 8)
         stop = max(start + 1, bins // 2)
         self.band = slice(start, stop)
@@ -121,6 +125,10 @@ class _EarlySpeechMixer:
             self.maximum_energy = max(energy, .99*self.maximum_energy + .01*energy)
             envelope_contrast = np.clip(1 - 10*self.minimum_energy/max(self.maximum_energy, 1e-24), 0, 1)
             fraction += .9*envelope_contrast*np.clip((coherence.mean()-.3)/.65, 0, 1)
+            if self.coherence_bypass:
+                energy_weights = np.sqrt(self.power[:, 0]*self.power[:, 1])
+                shared = np.dot(coherence, energy_weights) / max(energy_weights.sum(), 1e-24)
+                fraction = max(fraction, np.clip((shared-.55)/.35, 0, 1))
         return filtered + fraction*(target-filtered)
 
 
@@ -176,7 +184,7 @@ class WeightedPredictionDereverberator:
             self._inverse_covariance = np.broadcast_to(np.diag(diagonal), (bins, coefficients, coefficients)).astype(complex)
         self._power_history = np.zeros((bins, config.power.history_frames, channels))
         self._clean_power = np.zeros((bins, channels))
-        self._early_speech_mixer = _EarlySpeechMixer(bins) if config.preserve_early_speech else None
+        self._early_speech_mixer = _EarlySpeechMixer(bins, config.coherence_bypass) if config.preserve_early_speech or config.coherence_bypass else None
         self._psd = np.zeros((bins, 1))
         self._previous_output_power = np.zeros((bins, 1))
         self._wiener_gain = np.zeros((bins, 1))
