@@ -25,6 +25,10 @@ def render_stationary_pair(spectrum, iterations, reference_channel):
         return
     blocks = list(_blocks(bins, frames))
     coefficients = np.broadcast_to(np.eye(channels), (bins, channels, channels)).astype(complex)
+    # Cache Hermitian products only when the recording fits the covariance workspace.
+    packed = None
+    if bins*frames*4*np.dtype(complex).itemsize <= 12*1024**2:
+        packed = (spectrum[:,:,:,None]*spectrum[:,:,None,:].conj()).transpose(0,2,3,1).reshape(bins,4,frames)
     for _ in range(iterations):
         power = np.zeros((frames, channels))
         for band in blocks:
@@ -33,9 +37,12 @@ def render_stationary_pair(spectrum, iterations, reference_channel):
         power /= bins
         precision = 1 / np.maximum(power, 1e-7*power.max(axis=0) + 1e-16)
         for band in blocks:
-            block = spectrum[band]
-            outer = block[:, :, :, None] * block[:, :, None, :].conj()
-            covariance = np.einsum('ftmn,ts->fmns', outer, precision) / frames
+            if packed is None:
+                block = spectrum[band]
+                outer = block[:, :, :, None] * block[:, :, None, :].conj()
+                covariance = np.einsum('ftmn,ts->fmns', outer, precision) / frames
+            else:
+                covariance = (packed[band] @ precision).reshape(-1,2,2,2) / frames
             loading = 1e-7*(1 + covariance[:, 0, 0].real + covariance[:, 1, 1].real)
             covariance[:, 0, 0] += loading
             covariance[:, 1, 1] += loading
