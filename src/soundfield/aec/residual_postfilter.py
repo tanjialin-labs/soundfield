@@ -30,10 +30,13 @@ class ResidualEchoConfig:
     high_level_attack_frames: int = 10
     high_level_release_frames: int = 200
     maximum_snr: float = 40.0
+    preserve_residual_power: bool = False
 
     def __post_init__(self):
         for name in ('frequency_bin_count', 'sample_rate_hz', 'band_count', 'high_level_attack_frames', 'high_level_release_frames'):
             positive_integer(getattr(self, name), name)
+        if not isinstance(self.preserve_residual_power, bool):
+            raise ValueError("preserve_residual_power must be boolean")
         if self.frequency_bin_count < 2 or self.band_count < 12:
             raise ValueError('at least two frequency bins and twelve bands are required')
         if self.method not in ('critical_band', 'spectral', 'mask'):
@@ -176,6 +179,10 @@ class ResidualEchoPostfilter:
             if self.residual_energy < min(config.residual_energy_ratio*self.reference_energy, config.double_talk_energy_threshold):
                 mean_gain = np.r_[gains, band_presence].mean() if config.method == 'critical_band' else gains.mean()
                 gains = np.minimum(gains, config.mean_gain_scale*mean_gain)
+        if config.preserve_residual_power and config.method != 'mask':
+            nuisance = np.maximum(residual_echo-config.noise_floor,0)
+            fraction = np.divide(nuisance,power,out=np.ones_like(power),where=power>0)
+            gains = np.maximum(gains, 1-np.sqrt(np.minimum(fraction,1)))
         output = residual*gains
         if config.method == 'spectral':
             self.previous_output_power = np.abs(output)**2
