@@ -28,10 +28,12 @@ class ChannelRoutingConfig:
     adjacent_energy_ratio: float = 1.5
     winning_frame_fraction: float = .75
     adjacent_winning_fraction: float = .6
+    transition_frames: int = 0
 
     def __post_init__(self):
         for name in ("frequency_bin_count", "channel_count", "output_channel_count", "energy_history_frames", "activity_history_frames"):
             positive_integer(getattr(self, name), name)
+        nonnegative_integer(self.transition_frames, "transition_frames")
         nonnegative_integer(self.output_delay_frames, "output_delay_frames")
         if self.output_channel_count not in (1, self.channel_count):
             raise ValueError("output_channel_count must be one or equal channel_count")
@@ -61,6 +63,9 @@ class HysteresisChannelSelector:
         self._comparison_energy = np.zeros_like(self._energy)
         self._speech = np.zeros_like(self._energy)
         self._audio = np.zeros((config.frequency_bin_count, length, config.channel_count), complex)
+        self._weights = np.zeros(config.channel_count)
+        self._weights[0] = 1.
+        self._remaining = 0
         self._selected_channel = 0
         self._frame_index = 0
         self._closed = False
@@ -92,7 +97,7 @@ class HysteresisChannelSelector:
             if (np.max(mean_energy) < config.activity_energy_ratio * np.min(mean_energy)
                     or np.max(speech) < config.speech_probability_threshold):
                 candidate = previous
-            selected = spectrum[:, candidate]
+            aligned = spectrum
         else:
             self._speech[:-1] = self._speech[1:]
             self._speech[-1] = speech
@@ -122,11 +127,24 @@ class HysteresisChannelSelector:
                         candidate = previous
             self._audio[:, :-1] = self._audio[:, 1:]
             self._audio[:, -1] = spectrum
-            selected = self._audio[:, position, candidate]
+            aligned = self._audio[:, position]
         self._selected_channel = candidate
         self._frame_index += 1
         output = np.zeros((config.frequency_bin_count, config.output_channel_count), complex)
-        output[:, 0 if config.output_channel_count == 1 else candidate] = selected
+        if not config.transition_frames:
+            output[:, 0 if config.output_channel_count == 1 else candidate] = aligned[:,candidate]
+            return output
+        if candidate != previous:
+            self._remaining = config.transition_frames
+        target = np.zeros(config.channel_count)
+        target[candidate] = 1.
+        if self._remaining:
+            self._weights += (target-self._weights)/self._remaining
+            self._remaining -= 1
+        else:
+            self._weights[:] = target
+        weighted = aligned*self._weights
+        output[:] = weighted.sum(axis=1,keepdims=True) if config.output_channel_count == 1 else weighted
         return output
 
     def flush(self):
