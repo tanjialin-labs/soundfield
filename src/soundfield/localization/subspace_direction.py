@@ -153,7 +153,8 @@ class SubspaceDirectionEstimator:
                 raise ValueError("fixed_beam_weights must have shape (bins, microphones, directions)")
             self._fixed_beam_weights = weights.copy()
             reflection = config.reflection_selection
-            if np.ceil(2 * reflection.radius_multiplier * reflection.array_radius_meters / 340 * config.sample_rate_hz) >= np.ceil(2 / 340 * config.sample_rate_hz):
+            speed = config.geometry.sound_speed_meters_per_second
+            if np.ceil(2 * reflection.radius_multiplier * reflection.array_radius_meters / speed * config.sample_rate_hz) > np.ceil(2 / speed * config.sample_rate_hz):
                 raise ValueError("reflection exclusion radius leaves no correlation delays")
         self.reset()
 
@@ -340,11 +341,12 @@ class SubspaceDirectionEstimator:
         band = slice(*reflection.frequency_band)
         cross = direct[band] * reverse[band].conj()
         phase = np.divide(cross, np.abs(cross), out=np.zeros_like(cross), where=np.abs(cross) > 0)
-        maximum = int(np.ceil(2 / 340 * config.sample_rate_hz))
-        minimum = int(np.ceil(2 * reflection.radius_multiplier * reflection.array_radius_meters / 340 * config.sample_rate_hz))
+        speed = config.geometry.sound_speed_meters_per_second
+        maximum = int(np.ceil(2 / speed * config.sample_rate_hz))
+        minimum = int(np.ceil(2 * reflection.radius_multiplier * reflection.array_radius_meters / speed * config.sample_rate_hz))
         delays = np.arange(-maximum, maximum + 1) / config.sample_rate_hz
         frequency = np.arange(*reflection.frequency_band) * config.sample_rate_hz / config.frame_length_samples
         correlation = np.real(np.sum(phase, axis=1) @ np.exp(-2j * np.pi * frequency[:, None] * delays))
-        negative = np.max(correlation[:maximum - minimum])
+        negative = np.max(correlation[:maximum - minimum + 1])
         positive = np.max(correlation[maximum + minimum:])
         return candidates[1] if positive < reflection.reverse_peak_ratio * negative else candidates[0]
