@@ -60,7 +60,7 @@ def _finish_problem(problem, weights, constraints, solver):
     return BeamOptimizationResult(np.asarray(weights.value).T.copy(), float(problem.value), problem.status, violation)
 
 
-def _linear_sector_angles(start, stop):
+def _sector_angles(start, stop):
     return np.unique(np.r_[start, np.arange(np.ceil(start / 5), np.floor(stop / 5) + 1) * 5, stop])
 
 
@@ -78,7 +78,7 @@ def design_linear_beam(microphone_positions_meters, passband_degrees, *, fft_len
         raise ValueError('passband must lie inside [0, 180] degrees')
     bins = fft_length_samples//2+1
     frequencies = np.arange(bins)*sample_rate_hz/fft_length_samples
-    angles = np.union1d(np.arange(0, 181, 5), _linear_sector_angles(start, stop))
+    angles = np.union1d(np.arange(0, 181, 5), _sector_angles(start, stop))
     passing = np.flatnonzero((angles >= start) & (angles <= stop))
     stopping = np.setdiff1d(np.arange(len(angles)), passing)
     if not len(stopping):
@@ -197,7 +197,7 @@ def design_linear_blocking(microphone_positions_meters, passband_degrees, *, fft
     start, stop = passband_degrees
     if len(positions) < 2 or fft_length_samples % 2 or not 0 <= start <= stop <= 180:
         raise ValueError('linear blocking needs at least two microphones, an even FFT and a valid angular band')
-    angles = _linear_sector_angles(start, stop)
+    angles = _sector_angles(start, stop)
     frequencies = np.arange(fft_length_samples//2+1)*sample_rate_hz/fft_length_samples
     fraction = (.85 if len(positions) == 2 else .9) if retained_energy_fraction is None else retained_energy_fraction
     return design_subspace_blocking(array_steering_vectors(positions, angles, frequencies), retained_energy_fraction=fraction)
@@ -228,9 +228,7 @@ def design_circular_blocking(radius_meters, microphone_count, *, half_width_degr
     frequencies = np.fft.rfftfreq(fft_length_samples, 1/sample_rate_hz)
     result = np.zeros((bins, microphone_count, microphone_count-2, count), complex)
     for beam, center in enumerate(centers):
-        azimuths = np.arange(np.ceil((center-half_width_degrees)/5), np.floor((center+half_width_degrees)/5))*5 % 360
-        if not azimuths.size:
-            azimuths = [center % 360]
+        azimuths = _sector_angles(center - half_width_degrees, center + half_width_degrees) % 360
         angles = np.array([(polar, azimuth) for polar in (90, 110) for azimuth in azimuths])
         steering = array_steering_vectors(positions, angles, frequencies)
         for frequency, matrix in enumerate(steering):
