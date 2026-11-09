@@ -115,6 +115,22 @@ class OnlineSourceSeparator:
         if self._postfilter is not None:
             self._postfilter.reset()
 
+    @staticmethod
+    def _solve_pair(system, source):
+        """Solve the selected column of a two-channel demixing update."""
+        a, b = system[:, 0, 0], system[:, 0, 1]
+        c, d = system[:, 1, 0], system[:, 1, 1]
+        ad, bc = a*d, b*c
+        determinant = ad-bc
+        stable = np.abs(determinant) > 1e-6*(np.abs(ad) + np.abs(bc))
+        numerator = np.column_stack((d, -c) if source == 0 else (-b, a))
+        direction = np.divide(numerator, determinant[:, None], out=np.empty_like(numerator), where=stable[:, None])
+        if not np.all(stable):
+            rhs = np.zeros((np.count_nonzero(~stable), 2, 1), complex)
+            rhs[:, source] = 1.
+            direction[~stable] = np.linalg.solve(system[~stable], rhs)[..., 0]
+        return direction
+
     def process_frame(self, spectrum_frame, *, nearfield_power=None, nearfield_factors=None):
         config = self.config
         spectrum = spectral_frame(spectrum_frame, config.frequency_bin_count, config.channel_count)
@@ -159,8 +175,11 @@ class OnlineSourceSeparator:
             for source in range(config.channel_count):
                 weighted = covariance[:, :, :, source]
                 system = previous_adjoint @ weighted
-                rhs = np.broadcast_to(identity[:, source][None, :, None], (config.frequency_bin_count, config.channel_count, 1))
-                direction = np.linalg.solve(system, rhs)[..., 0]
+                if config.channel_count == 2:
+                    direction = self._solve_pair(system, source)
+                else:
+                    rhs = np.broadcast_to(identity[:, source][None, :, None], (config.frequency_bin_count, config.channel_count, 1))
+                    direction = np.linalg.solve(system, rhs)[..., 0]
                 normalizer = np.sum(direction.conj() * np.einsum("fmn,fn->fm", weighted, direction), axis=1)
                 updated[:, :, source] = direction / np.sqrt(normalizer)[:, None]
             coefficients = updated
