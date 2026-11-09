@@ -247,6 +247,30 @@ def design_circular_blocking(radius_meters, microphone_count, *, half_width_degr
     return result
 
 
+def design_circular_bank(radius_meters, microphone_count, centers_degrees, *, half_width_degrees=30.,
+                         fft_length_samples=512, sample_rate_hz=16000, solver='CLARABEL'):
+    """Design a uniform ring, sharing fixed-beam solutions across microphone rotations."""
+    positive_integer(microphone_count, "microphone_count")
+    if microphone_count not in (4, 6):
+        raise ValueError("circular design requires four or six microphones")
+    centers = real_array(centers_degrees, "centers_degrees", 1) % 360
+    if not len(centers) or np.any(centers % 5):
+        raise ValueError("centers_degrees must be a nonempty sequence on the five-degree grid")
+    pitch_degrees = 360 // microphone_count
+    options = dict(half_width_degrees=half_width_degrees, fft_length_samples=fft_length_samples,
+                   sample_rate_hz=sample_rate_hz)
+    solutions = {}
+    fixed = []
+    for center in centers:
+        rotation, offset = divmod(int(center), pitch_degrees)
+        if offset not in solutions:
+            beam = design_circular_beam(radius_meters, microphone_count, offset, solver=solver, **options)
+            solutions[offset] = beam.fixed_beam_weights
+        fixed.append(np.roll(solutions[offset], rotation, axis=1))
+    blocking = design_circular_blocking(radius_meters, microphone_count, centers_degrees=centers, **options)
+    return FixedBeamBank(np.stack(fixed, axis=2), blocking)
+
+
 def combine_beam_banks(banks):
     """Concatenate compatible beam resources along their beam axes."""
     banks = tuple(banks)
