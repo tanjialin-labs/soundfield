@@ -5,6 +5,7 @@ import numpy as np
 from ..contracts import audio_array, spectral_array, unit_interval_array
 from ..localization import DirectionalMatchingEstimator, SpeechGatedDirectionTracker
 from ..localization.speech_direction import SpeechDirectionConfig
+from ..enhancement.interference_gain import InterferenceSelectiveGain
 from ..enhancement.spatial_activity import SpatialActivityConfig, SpatialActivityGate
 from ..transform import FourierConfig, ShortTimeFourierTransform
 from .beam_separation import separate_beams
@@ -66,7 +67,7 @@ class DirectedCaptureResult:
 
 def capture_directed_region(audio, beam_bank, enhancement_config, separation_config, matching_config, *,
                              target_source_index=1, target_direction_indices=None, half_width_steps=2,
-                             activity_config=SpatialActivityConfig()):
+                             activity_config=SpatialActivityConfig(), selective_attenuation=False):
     """Use a target direction timeline to gate a separated source with spatial evidence."""
     samples = audio_array(audio)
     if matching_config.block_frames != 1 or matching_config.event_delay_frames != 0:
@@ -89,11 +90,14 @@ def capture_directed_region(audio, beam_bank, enhancement_config, separation_con
     matcher, gate = DirectionalMatchingEstimator(matching_config), SpatialActivityGate(activity_config)
     evidence, gains = np.zeros(frames), np.zeros(frames)
     scores = np.zeros((directions, frames))
+    direction_votes = []
     delay = activity_config.vote_history_frames-1
     for frame in range(frames+delay):
         if frame < frames:
             match = matcher.estimate(localization[:, frame], beam_activity=np.ones(len(matching_config.beam_intervals_degrees)))
             scores[:, frame] = match.direction_scores
+            if selective_attenuation:
+                direction_votes.append(np.count_nonzero(match.bin_coefficients[:, 0, :], axis=0))
             target_index = int(targets[frame])
             offsets = np.arange(directions) - target_index
             distances = np.abs(offsets)
@@ -106,6 +110,14 @@ def capture_directed_region(audio, beam_bank, enhancement_config, separation_con
         target = max(frame-delay, 0)
         if target < frames:
             gains[target] = gain
-    output = target_spectrum*gains[None, :, None]
+    if selective_attenuation:
+        selector = InterferenceSelectiveGain(matching_config)
+        frequency_gains = np.column_stack([
+            selector.process_frame(stages.input_spectrum[:, frame], direction_votes[frame], targets[frame], gains[frame])
+            for frame in range(frames)
+        ]) if frames else np.empty((bins, 0))
+        output = target_spectrum*frequency_gains[:, :, None]
+    else:
+        output = target_spectrum*gains[None, :, None]
     return DirectedCaptureResult(transform.synthesize(output, length_samples=len(samples)), stages.enhanced_beam_spectrum,
         stages.separated_spectrum, localization, scores, evidence, gains, output, delay*(bins-1))
