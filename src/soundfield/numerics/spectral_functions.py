@@ -63,3 +63,16 @@ def exponential_integral_approximation(values):
     denominator = 1 + inverse * (9.5733223454 + inverse * (25.6329561486 + inverse * (21.0996530827 + inverse * 3.9584969228)))
     result[~small] = numerator / denominator * np.exp(-x)
     return result.reshape(array.shape)
+
+
+def channel_phase(spectrum, preferred_channel):
+    """Return the preferred channel's unit phase, using a live channel at spectral zeros."""
+    reference = spectrum[..., preferred_channel]
+    missing = reference == 0
+    if np.any(missing):
+        reference = reference.copy()
+        available = spectrum[missing]
+        strongest = np.argmax(np.abs(available), axis=-1)
+        reference[missing] = available[np.arange(len(strongest)), strongest]
+    magnitude = np.abs(reference)
+    return np.divide(reference, magnitude, out=np.zeros_like(reference), where=magnitude > 0)

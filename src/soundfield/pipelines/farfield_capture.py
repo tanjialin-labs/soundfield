@@ -8,7 +8,7 @@ from ..neural.band_features import round_away_from_zero
 from ..selection.speech_beam import SpeechBeamConfig, SpeechBeamSelector
 from ..beamforming import MaskGuidedBeamformer, MaskGuidedConfig, MvdrConfig
 from ..enhancement.automatic_gain import AutomaticGainControl, GainControlConfig
-from ..numerics.spectral_functions import rescale_upper_range
+from ..numerics.spectral_functions import channel_phase, rescale_upper_range
 
 
 @dataclass(frozen=True)
@@ -107,8 +107,7 @@ def render_farfield_spectra(spectrum, speech_masks, *, mode='beam_selection', se
         evidence[:, :, 0] = gains.max(axis=2)
         applied_gains = gains.max(axis=2, keepdims=True) if ambient_shared_mask else gains
         magnitude = np.mean(np.abs(values)*np.maximum(applied_gains, floor[:, None, None]), axis=2)
-        phase_source = values[:, :, 1]
-        phase = np.divide(phase_source, np.abs(phase_source), out=np.zeros_like(phase_source), where=np.abs(phase_source)>0)
+        phase = channel_phase(values, 1)
         output[:, :, 0] = magnitude*phase
         output[:3] = 0
     return output, evidence, selected, noise_levels

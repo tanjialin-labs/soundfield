@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import numpy as np
 from ..contracts import positive_integer, finite_scalar, spectral_frame, unit_interval_array
-from ..numerics.spectral_functions import rescale_upper_range
+from ..numerics.spectral_functions import channel_phase, rescale_upper_range
 
 
 @dataclass(frozen=True)
@@ -128,7 +128,7 @@ class SpeechBeamSelector:
                 attenuation = np.maximum(self.floor[interval], gain**np.maximum(1, 2-gain))
                 values = spectrum[interval][:, selected]
                 magnitude = (np.max if config.magnitude_reduction == 'maximum' else np.mean)(np.abs(values)*attenuation[:, None], axis=1)
-                phase = np.divide(values[:, 0], np.abs(values[:, 0]), out=np.zeros(len(values), complex), where=np.abs(values[:, 0])>0)
+                phase = channel_phase(values, 0)
                 output[interval, 0] = magnitude*phase
         dominant = int(np.argmax(np.bincount(self.direction_history, minlength=config.channel_count)))
         return SpeechBeamResult(output, speech_gain, self.selected.copy(), evidence, self.noise_channel, self.noise_level_db, dominant)
