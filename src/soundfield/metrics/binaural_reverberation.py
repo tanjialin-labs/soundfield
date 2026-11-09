@@ -173,6 +173,9 @@ class BinauralReverberationEstimator:
         smooth_ratio = np.zeros((len(frequency), scan_count))
         low_history = np.empty((frame_count, scan_count))
         high_history = np.empty_like(low_history)
+        level_squared = level**2
+        phase_term = 2*level*np.cos(2*np.pi*frequency[:,None]*delay)*diffuse[:,None]
+        diffuse_squared = diffuse[:,None]**2
         for index in range(frame_count):
             frame[:160] = frame[160:]
             frame[160:] = microphones[index * 160:(index + 1) * 160]
@@ -183,12 +186,11 @@ class BinauralReverberationEstimator:
             instant = cross / np.maximum(np.sqrt(auto[:, 0] * auto[:, 1]), epsilon)
             coherence = config.coherence_memory * coherence + (1 - config.coherence_memory) * instant
             magnitude = np.abs(coherence[:, None]) ** 2
-            quadratic = level ** 2 * (1 - magnitude)
-            linear = (2 * level * np.cos(2 * np.pi * frequency[:, None] * delay) * diffuse[:, None]
-                      - (1 + level ** 2) * magnitude)
-            constant = diffuse[:, None] ** 2 - magnitude
+            quadratic = level_squared * (1 - magnitude)
+            linear = phase_term - (1 + level_squared) * magnitude
+            constant = diffuse_squared - magnitude
             with np.errstate(divide="ignore", invalid="ignore"):
-                ratio = ((1 + level ** 2) / 2 * (-linear + np.sqrt(np.maximum(linear ** 2 - 4 * quadratic * constant, epsilon)))
+                ratio = ((1 + level_squared) / 2 * (-linear + np.sqrt(np.maximum(linear ** 2 - 4 * quadratic * constant, epsilon)))
                          / (2 * quadratic))
             ratio = np.clip(np.nan_to_num(ratio, nan=.01, posinf=100, neginf=.01), .01, 100)
             instantaneous_coherence = spectrum[:, 0].conj() * spectrum[:, 1] / np.sqrt(power[:, 0] * power[:, 1] + epsilon)
