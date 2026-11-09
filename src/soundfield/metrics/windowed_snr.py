@@ -17,12 +17,15 @@ class WindowedSnrConfig:
     noise_window_frames: int = 100
     speech_window_frames: int = 40
     power_floor: float = 1e-12
+    subtract_noise_power: bool = False
 
     def __post_init__(self):
         for name in ("frequency_bin_count", "channel_count", "stop_bin", "noise_window_frames", "speech_window_frames"):
             positive_integer(getattr(self, name), name)
         nonnegative_integer(self.start_bin, "start_bin")
         finite_scalar(self.power_floor, "power_floor", minimum=np.finfo(float).tiny)
+        if not isinstance(self.subtract_noise_power, bool):
+            raise ValueError("subtract_noise_power must be boolean")
         if not self.start_bin + 1 < self.stop_bin <= self.frequency_bin_count:
             raise ValueError("frequency interval must contain at least two bins")
 
@@ -101,7 +104,8 @@ class WindowedSnrEstimator:
             self._recent_maximum = smooth.copy()
             self._speech_age = 0
         self._noise_power = np.mean(self._minimum, axis=0)
-        strongest = np.sort(self._maximum, axis=0)[::-1]
+        maxima = np.maximum(self._maximum - self._minimum, 0.) if config.subtract_noise_power else self._maximum
+        strongest = np.sort(maxima, axis=0)[::-1]
         count = len(strongest) // 2
         self._speech_power = np.mean(strongest[1:count + 1], axis=0)
         self._update_count += 1
