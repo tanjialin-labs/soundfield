@@ -239,7 +239,7 @@ def design_circular_blocking(radius_meters, microphone_count, *, half_width_degr
             rank = min(microphone_count, int(np.searchsorted(fraction, .9, side='right'))+1)
             blocked = np.zeros((microphone_count, microphone_count), complex)
             blocked[:, :microphone_count-rank] = basis[:, rank:][:, ::-1].conj()
-            if microphone_count == 4 and frequency > 160:
+            if microphone_count == 4 and frequencies[frequency] > 5000:
                 blocked[:, 1] = basis[:, 2].conj()
             if microphone_count == 6:
                 blocked[:, 1] += blocked[:, 4]
