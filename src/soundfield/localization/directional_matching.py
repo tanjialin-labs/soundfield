@@ -197,11 +197,11 @@ class DirectionalMatchingEstimator:
         half = config.smoothing_half_width_steps
         if half:
             kernel = .5 ** np.abs(np.arange(-half, half + 1))
-            extended = np.concatenate((scores[-half:], scores)) if config.circular_search else scores.copy()
-            smoothed = extended.copy()
-            for index in range(half, len(extended) - half - 1):
-                smoothed[index] = kernel @ extended[index - half:index + half + 1] / np.sum(kernel)
-            scores = smoothed[half:] if config.circular_search else smoothed
+            kernel = kernel / kernel.sum()
+            if config.circular_search:
+                scores = np.convolve(np.pad(scores, half, mode="wrap"), kernel, mode="valid")
+            elif len(scores) > 2 * half:
+                scores[half:-half] = np.convolve(scores, kernel, mode="valid")
         allowed = np.zeros(len(scores), bool)
         angles = np.asarray(config.scan_angles_degrees)
         for enabled, (start, stop) in zip(activity, config.beam_intervals_degrees):
