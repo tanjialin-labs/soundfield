@@ -34,16 +34,17 @@ def select_event_beam(spectrum, beam_activity, config=EventBeamConfig()):
     if len(active) == 1:
         return int(active[0])
     if not len(active):
-        activity = np.ones_like(activity)
+        active = np.arange(values.shape[2])
     stop = values.shape[1]-config.excluded_tail_frames
     start = stop-config.energy_frames
     if start < 0:
         raise ValueError('audio does not cover the event energy history')
     power = np.abs(values[:, start:stop])**2
     def energy(band):
-        return activity*np.sum(power[slice(*band)], axis=(0, 1))
+        return np.sum(power[slice(*band)], axis=(0, 1))[active]
     constrained = config.lower_band_weight*energy(config.lower_band)+(1-config.lower_band_weight)*energy(config.upper_band)
     chosen = int(np.argmax(constrained))
     full = energy(config.full_band)
     maximum = int(np.argmax(full))
-    return maximum if full[chosen]/max(full[maximum], 1e-5) < config.minimum_full_band_ratio else chosen
+    selected = maximum if full[chosen] < config.minimum_full_band_ratio * full[maximum] else chosen
+    return int(active[selected])
