@@ -15,6 +15,7 @@ license-files = ["licenses/*.txt"]
 Repository = "https://github.com/tanjialin-labs/soundfield"
 
 [project.optional-dependencies]
+inference = ["onnxruntime>=1.17"]
 design = ["cvxpy>=1.6", "sympy>=1.13"]
 evaluation = ["pesq>=0.0.4", "pystoi>=0.4"]
 plotting = ["matplotlib>=3.8"]

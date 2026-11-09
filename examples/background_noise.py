@@ -1,4 +1,4 @@
-"""Suppress background noise in a recording without external resources."""
+"""Suppress background noise using statistical gains or a recurrent spectrum model."""
 import argparse
 from pathlib import Path
 
@@ -10,12 +10,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--minimum-gain", type=float, default=.16)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--minimum-gain", type=float)
+    mode.add_argument("--recurrent-model", type=Path)
     args = parser.parse_args()
-    if args.input.resolve() == args.output.resolve():
+    if args.output.resolve() in {p.resolve() for p in (args.input, args.recurrent_model) if p is not None}:
         parser.error("input and output must differ")
     rate, audio = read_audio(args.input)
-    write_audio(args.output, suppress_background_noise(audio, rate, minimum_gain=args.minimum_gain), rate)
+    if args.recurrent_model:
+        from soundfield.neural.recurrent_spectrum import RecurrentSpectrumEnhancer
+        output = RecurrentSpectrumEnhancer(args.recurrent_model).enhance_audio(audio, rate)
+    else:
+        output = suppress_background_noise(audio, rate, minimum_gain=.16 if args.minimum_gain is None else args.minimum_gain)
+    write_audio(args.output, output, rate)
 
 
 if __name__ == "__main__":
