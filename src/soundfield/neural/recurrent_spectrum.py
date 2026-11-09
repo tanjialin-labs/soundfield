@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..contracts import audio_array
+from ..contracts import audio_array, finite_scalar
 
 
 class RecurrentSpectrumEnhancer:
@@ -42,11 +42,13 @@ class RecurrentSpectrumEnhancer:
         self._state = dict(zip(self._caches, state))
         return enhanced[0,:,0,0] + 1j*enhanced[0,:,0,1]
 
-    def enhance_audio(self, audio, sample_rate_hz):
+    def enhance_audio(self, audio, sample_rate_hz, *, phase_preserving_floor=None):
         """Enhance a full mono recording using centered 512-point periodic square-root Hann windows."""
         x = audio_array(audio)
         if sample_rate_hz != 16000 or x.shape[1] != 1:
             raise ValueError('recurrent enhancement requires mono audio at 16000 Hz')
+        if phase_preserving_floor is not None:
+            finite_scalar(phase_preserving_floor, "phase_preserving_floor", minimum=0, maximum=1)
         self.reset()
         if not len(x):
             return x.copy()
@@ -56,5 +58,9 @@ class RecurrentSpectrumEnhancer:
         output = np.zeros_like(padded)
         for start in range(0,len(padded)-511,hop):
             frame = np.fft.rfft(padded[start:start+512]*window)
-            output[start:start+512] += np.fft.irfft(self.process_frame(frame))*window
+            enhanced = self.process_frame(frame)
+            if phase_preserving_floor is not None:
+                gain = np.clip(abs(enhanced) / np.maximum(abs(frame), 1e-12), phase_preserving_floor, 1.)
+                enhanced = frame * gain
+            output[start:start+512] += np.fft.irfft(enhanced)*window
         return output[hop:hop+len(x),None]

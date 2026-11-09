@@ -30,7 +30,8 @@ def separate_sources(audio, config: DemixingConfig | None = None, *, transform_c
     return transform.synthesize(output, length_samples=len(samples))
 
 
-def separate_stationary_pair(audio, *, iterations=12, reference_channel_index=1, transform_config=None):
+def separate_stationary_pair(audio, *, iterations=12, reference_channel_index=1, transform_config=None,
+                             speech_enhancer=None, speaker_router=None, sample_rate_hz=16000):
     """Separate two microphones using one demixing matrix per bin fitted to the entire recording."""
     samples = audio_array(audio)
     positive_integer(iterations, "iterations")
@@ -40,4 +41,21 @@ def separate_stationary_pair(audio, *, iterations=12, reference_channel_index=1,
     transform = ShortTimeFourierTransform(transform_config or FourierConfig(4096, 2048))
     spectrum = transform.analyze(samples)
     render_stationary_pair(spectrum, iterations, reference_channel_index)
-    return transform.synthesize(spectrum, length_samples=len(samples))
+    images = transform.synthesize(spectrum, length_samples=len(samples))
+    output = images
+    if speech_enhancer is not None:
+        output = np.column_stack([speech_enhancer.enhance_audio(images[:, i:i+1], sample_rate_hz,
+                                  phase_preserving_floor=.65)[:, 0] for i in range(2)])
+    return _route_images(images, output, speaker_router, sample_rate_hz)
+
+
+def _route_images(images, output, speaker_router, sample_rate_hz):
+    if speaker_router is not None:
+        positive_integer(sample_rate_hz, 'sample_rate_hz')
+        speaker_router.reset()
+        output = output.copy()
+        for start in range(0, len(images), 2*sample_rate_hz):
+            span = slice(start, start+2*sample_rate_hz)
+            speaker_router.process_block(images[span])
+            output[span] = output[span][:, speaker_router.source_order]
+    return output
