@@ -27,11 +27,14 @@ def main():
         fixed=np.stack([design_linear_beam(positions,interval,**options).fixed_beam_weights for interval in intervals],axis=2)
         blocking=np.stack([design_linear_blocking(positions,interval,**options) for interval in intervals],axis=3)
         bank = FixedBeamBank(fixed, blocking)
+        xyz = np.column_stack((positions, np.zeros((args.microphones, 2))))
     else:
         centers = args.centers_degrees if args.centers_degrees is not None else np.arange(args.microphones)*360/args.microphones
         bank = design_circular_bank(args.radius_meters, args.microphones, centers,
                                     half_width_degrees=args.half_width_degrees, **options)
-    save_beam_bank(args.output, bank)
+        angle = np.arange(args.microphones)*2*np.pi/args.microphones
+        xyz = args.radius_meters*np.column_stack((np.cos(angle),np.sin(angle),np.zeros_like(angle)))
+    save_beam_bank(args.output, bank, sample_rate_hz=args.sample_rate, positions_meters=xyz)
 
 
 if __name__=='__main__':main()

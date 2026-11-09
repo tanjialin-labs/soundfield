@@ -21,7 +21,7 @@ def main():
     if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
         parser.error('outputs must be distinct from input resources and each other')
     rate, audio = read_audio(args.input)
-    bank = load_beam_bank(args.beam_bank)
+    bank = load_beam_bank(args.beam_bank, sample_rate_hz=rate)
     if rate != 16000 or audio.shape[1] != 8 or bank.beam_count != 5:
         parser.error('this configuration uses 16 kHz, eight microphones and five beams')
     enhancement = SidelobeConfig(adaptive_filter=NlmsConfig(frame_length_samples=2*(bank.frequency_bin_count-1), reference_count=bank.reference_count))

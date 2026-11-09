@@ -25,7 +25,7 @@ def main():
     if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
         parser.error('outputs must be distinct from input resources and each other')
     rate, audio = read_audio(args.input)
-    bank = load_beam_bank(args.beam_bank)
+    bank = load_beam_bank(args.beam_bank, sample_rate_hz=rate)
     bins = bank.frequency_bin_count
     enhancement = SidelobeConfig(adaptive_filter=NlmsConfig(frame_length_samples=2*(bins-1), reference_count=bank.reference_count))
     separation = DemixingConfig(frequency_bin_count=bins, channel_count=bank.beam_count, energy_stop_bin=min(257,bins), weighting_strategy='blended_energy')

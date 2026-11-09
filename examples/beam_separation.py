@@ -30,7 +30,7 @@ def main():
     if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
         parser.error('output paths must be distinct from each other and from input resources')
     rate, audio = read_audio(args.input)
-    bank = load_beam_bank(args.beam_bank)
+    bank = load_beam_bank(args.beam_bank, sample_rate_hz=rate)
     bins = bank.frequency_bin_count
     postfilter = ReferencePostfilterConfig.for_grid(bins, rate) if args.postfilter else None
     enhancement = SidelobeConfig(adaptive_filter=NlmsConfig(frame_length_samples=2*(bins-1),

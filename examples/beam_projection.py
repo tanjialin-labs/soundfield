@@ -18,8 +18,8 @@ def main():
     arguments = parser.parse_args()
     if arguments.output.resolve() in (arguments.input.resolve(), arguments.beam_bank.resolve()):
         parser.error("output must differ from input resources")
-    bank = load_beam_bank(arguments.beam_bank)
     _, audio = read_audio(arguments.input)
+    bank = load_beam_bank(arguments.beam_bank, sample_rate_hz=_)
     hop = bank.frequency_bin_count - 1
     spectrum = ShortTimeFourierTransform(FourierConfig(2 * hop, hop)).analyze(audio)
     fixed = np.empty((*spectrum.shape[:2], bank.beam_count), dtype=complex)

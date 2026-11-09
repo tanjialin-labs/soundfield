@@ -32,8 +32,8 @@ def main():
         resources.append(arguments.speech_mask)
     if arguments.output.resolve() in [path.resolve() for path in resources]:
         parser.error("output must differ from every input resource")
-    bank = load_beam_bank(arguments.beam_bank)
     sample_rate, audio = read_audio(arguments.input)
+    bank = load_beam_bank(arguments.beam_bank, sample_rate_hz=sample_rate)
     strategy = arguments.strategy or ("spatial_amplitude" if bank.beam_count > 1 else "diffuse_amplitude")
     postfilter = None
     if arguments.postfilter or arguments.protect_postfilter_speech:
