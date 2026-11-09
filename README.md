@@ -2,6 +2,8 @@
 
 English · [简体中文](README.zh-CN.md)
 
+Release **1.0.0**
+
 SoundField is a Python library for speech and microphone-array signal processing. Build a streaming echo canceller for a call, separate two speakers in a recording, focus capture on a direction, or measure a room with a swept sine. The NumPy and SciPy core runs on a CPU.
 
 ## Install

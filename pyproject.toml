@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "soundfield"
-version = "0.7.0"
+version = "1.0.0"
 description = "Audio and microphone-array signal processing"
 readme = "README.md"
 requires-python = ">=3.11"
