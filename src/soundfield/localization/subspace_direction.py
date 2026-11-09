@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.linalg import svd
 
 from ..contracts import finite_scalar, nonnegative_integer, positive_integer, real_array, spectral_frame, spectral_array
 from .geometry import ArrayGeometry, linear_array, plane_wave_responses
@@ -258,34 +257,38 @@ class SubspaceDirectionEstimator:
                 mask[(center + np.arange(-half, half + 1)) % config.direction_count] = True
         if full_grid:
             scan[:] = extended[:] = True
-        scores = np.zeros((config.direction_count, config.analysis_band[1] - config.analysis_band[0]), complex)
+        band = slice(*config.analysis_band)
+        snapshots = (samples[band] * weights[band, :, None]).swapaxes(1, 2)
+        used = np.any(snapshots != 0, axis=(1, 2))
+        scores = np.zeros((config.direction_count, len(used)))
+        if not np.any(used):
+            return scores, scan
+        data = snapshots[used]
+        covariance = data @ data.conj().swapaxes(1, 2) / samples.shape[1]
+        eigenvalues, vectors = np.linalg.eigh(covariance)
+        vectors = vectors[:, :, ::-1]
+        basis = vectors[:, :, config.source_count:]
+        gap = eigenvalues[:, -config.source_count] - eigenvalues[:, -config.source_count-1]
+        resolved = gap > 32 * np.finfo(float).eps * eigenvalues[:, -1]
         noise_config = config.noise_subspace
         if noise_config is not None:
-            speech_level = np.mean(np.abs(samples[slice(*noise_config.level_band)]))
-            noise_level = np.mean(np.abs(self._noise_history[slice(*noise_config.level_band)]))
-        for offset, index in enumerate(range(*config.analysis_band)):
-            data = samples[index].T * weights[index]
-            if np.max(np.abs(data)) == 0:
-                continue
-            covariance = data @ data.conj().T / samples.shape[1]
-            diagonal = np.abs(np.diag(covariance))
-            covariance[np.diag_indices(len(diagonal))] = diagonal + .0001 * np.max(diagonal)
-            vectors = svd(covariance, lapack_driver="gesvd")[0]
-            basis = vectors[:, config.source_count:]
-            if noise_config is not None and speech_level <= noise_config.speech_to_noise_threshold * noise_level:
-                data = self._noise_history[index].T
-                noise_covariance = data @ data.conj().T / data.shape[1]
-                diagonal = np.abs(np.diag(noise_covariance))
-                noise_covariance[np.diag_indices(len(diagonal))] = diagonal + .0001 * np.max(diagonal)
-                noise_vectors = svd(noise_covariance, lapack_driver="gesvd")[0]
-                vector_index = noise_config.noise_vector_index
+            level_band = slice(*noise_config.level_band)
+            speech_level = np.mean(np.abs(samples[level_band]))
+            noise_level = np.mean(np.abs(self._noise_history[level_band]))
+            if noise_level > 0 and speech_level <= noise_config.speech_to_noise_threshold * noise_level:
+                history = self._noise_history[band][used].swapaxes(1, 2)
+                noise_covariance = history @ history.conj().swapaxes(1, 2) / history.shape[2]
+                _, noise_vectors = np.linalg.eigh(noise_covariance)
+                index = noise_config.noise_vector_index
                 gain = min(noise_level / max(speech_level, np.finfo(float).tiny) * noise_config.noise_vector_gain, 1)
-                basis = np.column_stack((gain * noise_vectors[:, vector_index], vectors[:, vector_index + 2:]))
-            projector = basis @ basis.conj().T
-            responses = self._responses[offset][:, extended]
-            denominator = np.sum(responses.conj() * (projector @ responses), axis=0)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                scores[extended, offset] = config.geometry.microphone_count / denominator
+                noise_vector = gain * noise_vectors[:, :, -(index+1)]
+                basis = np.concatenate((noise_vector[:, :, None], vectors[:, :, index+2:]), axis=2)
+        responses = self._responses[used][:, :, extended]
+        projection = basis.conj().swapaxes(1, 2) @ responses
+        power = np.sum(np.abs(projection)**2, axis=1)
+        microphones = config.geometry.microphone_count
+        power = np.maximum(power, microphones * np.finfo(float).eps)
+        scores[np.ix_(extended, used)] = (resolved[:, None] * microphones / power).T
         return scores, scan
 
     def _peaks(self, scores, scan):
