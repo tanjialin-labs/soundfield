@@ -36,7 +36,10 @@ def calibrate_channel_levels(audio, sample_rate_hz, *, segment_start_samples=Non
     spread = np.ptp(energy, axis=0)
     selected = np.argsort(spread, kind='stable')[1:-1]
     trimmed = float(np.mean(spread[selected]))
-    accepted = trimmed < maximum_spread_db
+    audible = np.all(energy[:, selected] > 10*np.log10(energy_floor), axis=0)
+    accepted = trimmed < maximum_spread_db and bool(np.any(audible))
+    if accepted:
+        selected = selected[audible]
     gains = np.ones(samples.shape[1])
     if accepted:
         mean_energy = np.mean(energy[:, selected], axis=1)
