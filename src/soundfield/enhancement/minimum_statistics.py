@@ -17,8 +17,11 @@ class NoiseTrackingConfig:
     window_frames: int = 15
     initial_frame_offset: int = 2
     initial_window_index: int = 0
+    initialize_from_observation: bool = False
 
     def __post_init__(self):
+        if not isinstance(self.initialize_from_observation, bool):
+            raise ValueError("initialize_from_observation must be boolean")
         for name in ("power_memory", "presence_memory", "noise_memory"):
             finite_scalar(getattr(self, name), name, minimum=0, maximum=1)
         finite_scalar(self.detection_ratio, "detection_ratio", minimum=0)
@@ -44,6 +47,13 @@ class _MinimumStatistics:
 
     def update(self, instantaneous_power):
         config = self.config
+        if config.initialize_from_observation:
+            starting = (self.power == 0) & (instantaneous_power > 0)
+            self.power[starting] = instantaneous_power[starting]
+            self.minimum[starting] = instantaneous_power[starting]
+            self.temporary[starting] = instantaneous_power[starting]
+            self.history[starting] = instantaneous_power[starting, None]
+            self.noise[starting] = instantaneous_power[starting]
         self.power = config.power_memory * self.power + (1 - config.power_memory) * instantaneous_power
         self.minimum = np.minimum(self.minimum, self.power)
         self.temporary = np.minimum(self.temporary, self.power)
