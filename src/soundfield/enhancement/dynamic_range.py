@@ -54,10 +54,13 @@ class DynamicRangeController:
             selected = np.abs(delta) <= knee/2
             reduction[selected] = (1/config.compression_ratio-1)*(delta[selected]+knee/2)**2/(2*knee)
         targets = reduction+config.makeup_gain_db
-        gains = np.empty(len(samples))
+        ceiling_db = 20*np.log10(config.peak_ceiling)
+        limits = ceiling_db - levels
+        smoothed = self.gain_db
+        gains_db = np.empty(len(samples))
         for index, target in enumerate(targets):
-            memory = self.attack if target < self.gain_db else self.release
-            self.gain_db = memory*self.gain_db+(1-memory)*target
-            self.gain_db = min(self.gain_db, 20*np.log10(config.peak_ceiling)-levels[index])
-            gains[index] = 10**(self.gain_db/20)
-        return samples*gains[:, None]
+            memory = self.attack if target < smoothed else self.release
+            smoothed = min(memory*smoothed+(1-memory)*target, limits[index])
+            gains_db[index] = smoothed
+        self.gain_db = smoothed
+        return samples * np.power(10., gains_db / 20)[:, None]
