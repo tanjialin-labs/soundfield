@@ -28,9 +28,10 @@ class EchoFilterConfig:
     ignore_reference_activity: bool = False
     refinement_partition_count: int = 3
     refinement_reference_indices: tuple = (0,)
+    sample_rate_hz: int = 16000
 
     def __post_init__(self):
-        for name in ('hop_length_samples', 'reference_count', 'partition_count'):
+        for name in ('hop_length_samples', 'reference_count', 'partition_count', 'sample_rate_hz'):
             positive_integer(getattr(self, name), name)
         nonnegative_integer(self.refinement_partition_count, 'refinement_partition_count')
         if self.method not in ('constrained', 'spectral'):
@@ -43,7 +44,7 @@ class EchoFilterConfig:
             finite_scalar(getattr(self, name), name, minimum=np.finfo(float).eps)
         for name in ('residual_regularization_scale', 'normalization_scale'):
             finite_scalar(getattr(self, name), name, minimum=0)
-        if self.inverse_time_constant_seconds < self.hop_length_samples/16000:
+        if self.inverse_time_constant_seconds < self.hop_length_samples/self.sample_rate_hz:
             raise ValueError('inverse time constant must span at least one hop')
         if any(index < 0 or index >= self.reference_count for index in self.refinement_reference_indices):
             raise ValueError('refinement reference index is out of range')
@@ -106,7 +107,7 @@ class ReferenceSpectrumBuffer:
         self.partition_power[:, :references] = np.abs(self.spectrum)**2
         self.summed_power = self.partition_power.sum(axis=1)
         if config.method == 'constrained':
-            smoothing = 1-hop/(16000*config.inverse_time_constant_seconds)
+            smoothing = 1-hop/(config.sample_rate_hz*config.inverse_time_constant_seconds)
             current = self.spectrum.conj()[:, :, None]*self.spectrum[:, None, :]
             self.covariance = smoothing*self.covariance+(1-smoothing)*current
             regularized = self.covariance*config.cross_power_scale

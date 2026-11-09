@@ -30,7 +30,7 @@ class TimedEchoAudio:
 
 
 class EchoCancellationStream:
-    """Process contiguous, synchronized microphone and playback chunks at 16 kHz.
+    """Process contiguous, synchronized microphone and playback chunks on the configured reference sample grid.
 
     Input chunks may have any length. Outputs have at most one hop each and
     retain the recording's sample positions. Optional reference alignment uses the first microphone
@@ -42,9 +42,11 @@ class EchoCancellationStream:
         nonnegative_integer(maximum_gap_samples, 'maximum_gap_samples')
         self.maximum_gap_samples = maximum_gap_samples
         positive_integer(sample_rate_hz, 'sample_rate_hz')
-        if sample_rate_hz != 16000:
-            raise ValueError('echo streaming requires a 16000 Hz sample grid')
         self.config = config if config is not None else EchoCancellationConfig()
+        if self.config.linear_filter.sample_rate_hz != sample_rate_hz:
+            raise ValueError('reference filter and stream sample rates must agree')
+        if sample_rate_hz != 16000 and self.config.communication_filter is not None:
+            raise ValueError('communication filtering requires a 16000 Hz sample grid')
         if self.config.residual_filter and self.config.residual_filter.sample_rate_hz != sample_rate_hz:
             raise ValueError('residual filtering and stream sample rates must agree')
         if self.config.residual_filter and self.config.residual_filter.method == 'mask':
