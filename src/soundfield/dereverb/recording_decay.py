@@ -12,8 +12,6 @@ def dry_fraction(audio, spectrum):
     power = np.mean(np.abs(pair)**2, axis=1)
     weights = np.sqrt(power[:,0]*power[:,1])
     coherent = np.sum(np.abs(cross)**2/np.maximum(weights,1e-12))/max(weights.sum(),1e-12)
-    if coherent > .995:
-        return 1.
     if coherent < .79:
         return 0.
     envelope = np.mean(audio[:frames*size].reshape(frames,size,2)**2, axis=(1,2))
@@ -27,6 +25,8 @@ def dry_fraction(audio, spectrum):
     typical, steep = np.percentile(drop[falling], [80,95])
     if typical < 16 or steep < 18:
         return 0.
+    if coherent > .995:
+        return 1.
     if len(audio)%size:
         envelope = np.append(envelope, np.mean(audio[frames*size:]**2))
     level = 10*np.log10(np.maximum(envelope,1e-20)/max(envelope.max(),1e-20))
