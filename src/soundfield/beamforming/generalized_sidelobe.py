@@ -74,6 +74,7 @@ class GeneralizedSidelobeCanceller:
             attenuation = np.maximum(self.config.attenuation_floor, np.minimum(1 - strength + self.config.attenuation_offset, 1))
             output *= attenuation
         if self._postfilter is not None:
-            mean_reference = np.sum(reference * self._active_references, axis=1, keepdims=True) / (np.sum(self._active_references, axis=1, keepdims=True) + 1e-10)
-            output = self._postfilter.process_frame(output, mean_reference)
+            active_count = np.maximum(self._active_references.sum(axis=1, keepdims=True), 1)
+            reference_power = np.sum(np.abs(reference)**2 * self._active_references, axis=1, keepdims=True)
+            output = self._postfilter.process_frame(output, np.sqrt(reference_power) / active_count)
         return output
