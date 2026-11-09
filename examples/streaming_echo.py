@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from soundfield.aec import EchoCancellationConfig, EchoCancellationStream, EchoFilterConfig, InputConditioningConfig
+from soundfield.aec import (CommunicationPostfilterConfig, EchoCancellationConfig, EchoCancellationStream,
+                            EchoFilterConfig, InputConditioningConfig)
 from soundfield.io import read_audio, write_audio
 
 
@@ -19,13 +20,17 @@ def main():
     parser.add_argument('--timeline')
     parser.add_argument('--chunk-samples', type=int, default=320)
     parser.add_argument('--fast-tracking', action='store_true', help='track changing echo paths with bounded updates')
+    parser.add_argument('--preserve-nearend', action='store_true',
+                        help='pass full-band communication audio through while playback is inactive')
     args = parser.parse_args()
     rate, microphone = read_audio(args.microphone)
     reference_rate, reference = read_audio(args.reference)
     if rate != reference_rate or len(microphone) != len(reference) or args.chunk_samples < 1:
         parser.error('paired recordings need equal sample rates and lengths; chunk size must be positive')
     config = EchoCancellationConfig(input=InputConditioningConfig(microphone_count=microphone.shape[1], reference_count=reference.shape[1]),
-                                    linear_filter=EchoFilterConfig(reference_count=reference.shape[1]), track_path_changes=args.fast_tracking)
+                                    linear_filter=EchoFilterConfig(reference_count=reference.shape[1]), track_path_changes=args.fast_tracking,
+                                    communication_filter=CommunicationPostfilterConfig(
+                                        inactive_gain_policy='preserve_nearend' if args.preserve_nearend else 'wiener'))
     stream = EchoCancellationStream(config, sample_rate_hz=rate)
     chunks = []
     for start in range(0, len(microphone), args.chunk_samples):

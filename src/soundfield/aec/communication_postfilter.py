@@ -54,7 +54,7 @@ class CommunicationPostfilterConfig:
             raise ValueError('reference and highpass intervals must fit inside the spectrum')
         if any(not 0 <= start < stop <= bins for start, stop in self.residual_energy_intervals):
             raise ValueError('residual energy intervals must fit inside the spectrum')
-        if self.noise_feedback not in ('lagged_echo', 'combined') or self.inactive_gain_policy not in ('wiener', 'bypass'):
+        if self.noise_feedback not in ('lagged_echo', 'combined') or self.inactive_gain_policy not in ('wiener', 'bypass', 'preserve_nearend'):
             raise ValueError('unsupported noise feedback or inactive gain policy')
 
 
@@ -82,7 +82,7 @@ class CommunicationEchoPostfilter:
         self.gain_estimator.reset()
 
     def process_frame(self, residual_spectrum, echo_spectrum, reference_spectrum, *, speech_mask=None,
-                      reference_activity_energy=None):
+                      reference_activity_energy=None, playback_active=True):
         config = self.config
         bins = config.noise.frequency_bin_count
         residual = spectral_frame(residual_spectrum, bins, 1)[:, 0]
@@ -133,6 +133,9 @@ class CommunicationEchoPostfilter:
                 selected_reference = np.abs(reference[:, config.reference_channel_index])
                 if selected_reference.sum() > config.reference_amplitude_threshold:
                     gain[selected_reference >= self.reference_threshold] = 0
+        if speech_mask is None and not playback_active and config.inactive_gain_policy == 'preserve_nearend':
+            self.gains.fill(1.)
+            return residual[:, None].copy()
         amplitude_squared = np.abs(gain*residual)**2+config.noise_output_scale*(1-gain)*noise
         output = np.sqrt(np.maximum(amplitude_squared, 0))*residual/np.maximum(np.abs(residual), 1e-10)
         output[:config.highpass_bin_count] = 0

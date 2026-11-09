@@ -142,7 +142,8 @@ class AcousticEchoCanceller:
             primary[:, channel] = filtered[:, 0]
             if self.communication_filters:
                 communication[:, channel] = self.communication_filters[channel].process_frame(error, echo,
-                    self.reference_buffer.spectrum, speech_mask=None if communication_mask is None else communication_mask[:, channel])[:, 0]
+                    self.reference_buffer.spectrum, playback_active=active,
+                    speech_mask=None if communication_mask is None else communication_mask[:, channel])[:, 0]
         output = self.audio_synthesizer.process_frame(primary)
         communication_output = (self.communication_synthesizer.process_frame(communication) if self.communication_filters else np.zeros_like(output))
         return EchoAudioResult(output, communication_output, residual, estimated)
