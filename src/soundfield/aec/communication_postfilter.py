@@ -36,8 +36,11 @@ class CommunicationPostfilterConfig:
     reference_amplitude_threshold: float = 200.0
     noise_feedback: str = 'lagged_echo'
     inactive_gain_policy: str = 'wiener'
+    limit_noise_reinjection: bool = False
 
     def __post_init__(self):
+        if not isinstance(self.limit_noise_reinjection, bool):
+            raise ValueError("limit_noise_reinjection must be boolean")
         positive_integer(self.activity_history_frames, 'activity_history_frames')
         positive_integer(self.reference_threshold_bin_count, 'reference_threshold_bin_count')
         nonnegative_integer(self.reference_channel_index, 'reference_channel_index')
@@ -137,6 +140,8 @@ class CommunicationEchoPostfilter:
             self.gains.fill(1.)
             return residual[:, None].copy()
         amplitude_squared = np.abs(gain*residual)**2+config.noise_output_scale*(1-gain)*noise
+        if config.limit_noise_reinjection:
+            amplitude_squared = np.minimum(amplitude_squared, residual_power)
         output = np.sqrt(np.maximum(amplitude_squared, 0))*residual/np.maximum(np.abs(residual), 1e-10)
         output[:config.highpass_bin_count] = 0
         self.gains = gain.copy()
