@@ -15,6 +15,7 @@ license-files = ["licenses/*.txt"]
 Repository = "https://github.com/tanjialin-labs/soundfield"
 
 [project.optional-dependencies]
+recognition = ["sherpa-onnx>=1.12", "pocketsphinx>=5"]
 identification = ["sherpa-onnx>=1.12"]
 inference = ["onnxruntime>=1.17"]
 design = ["cvxpy>=1.6", "sympy>=1.13"]
