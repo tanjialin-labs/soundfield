@@ -15,8 +15,10 @@ class EchoSpectrumResult:
 
 
 class PartitionedEchoFilter:
-    def __init__(self, config=EchoFilterConfig()):
+    def __init__(self, config=EchoFilterConfig(), *, fast_tracking=False):
         self.config = config
+        self.fast_tracking = fast_tracking
+        self.adaptation_rate = min(1., 2.5*config.adaptation_rate) if fast_tracking else config.adaptation_rate
         bins = config.frequency_bin_count
         self.normalization_floor = np.maximum(1-np.arange(bins)/bins, 2/config.partition_count)*config.partition_count*config.normalization_floor
         self.reset()
@@ -65,7 +67,12 @@ class PartitionedEchoFilter:
                 self.residual_power = np.abs(error_spectrum)**2
                 cross = reference.partition_spectra.conj().reshape(config.frequency_bin_count, config.partition_count, config.reference_count)
                 update = np.einsum('bij,btj->bti', reference.inverse_covariance, cross)
-                self.adaptive_weights += config.adaptation_rate*update.reshape(self.adaptive_weights.shape)*error_spectrum[:, None]
+                update = update.reshape(self.adaptive_weights.shape)
+                if self.fast_tracking:
+                    # The reference projected onto its update gives the loop gain in each bin.
+                    loop_gain = self.adaptation_rate * np.sum(reference.partition_spectra * update, axis=1).real
+                    update /= np.maximum(1., loop_gain)[:, None]
+                self.adaptive_weights += self.adaptation_rate*update*error_spectrum[:, None]
                 impulse = np.fft.irfft(self.adaptive_weights, n=2*hop, axis=0)
                 impulse[hop:] = 0
                 delay_candidates = impulse[:hop, ::config.reference_count]

@@ -25,8 +25,11 @@ class EchoCancellationConfig:
     refinement: EchoRefinementConfig | None = None
     output_gain: float = 1.0
     enable_delay_estimation: bool = False
+    track_path_changes: bool = False
 
     def __post_init__(self):
+        if self.track_path_changes and self.linear_filter.method != 'constrained':
+            raise ValueError('path tracking requires a constrained filter')
         if (self.input.hop_length_samples != self.linear_filter.hop_length_samples
                 or self.input.reference_count != self.linear_filter.reference_count):
             raise ValueError('input and linear filter configurations must agree')
@@ -60,6 +63,10 @@ class AcousticEchoCanceller:
         self.reference_buffer = ReferenceSpectrumBuffer(config.linear_filter)
         count = config.input.microphone_count
         self.filters = [PartitionedEchoFilter(config.linear_filter) for _ in range(count)]
+        self.tracking_filters = [PartitionedEchoFilter(config.linear_filter, fast_tracking=True)
+                                 for _ in range(count)] if config.track_path_changes else []
+        self.path_errors = np.zeros((count, 2))
+        self.use_fast_path = np.zeros(count, dtype=bool)
         self.refiners = [CovarianceEchoRefiner(config.refinement) for _ in range(count)] if config.refinement else []
         self.residual_filters = [ResidualEchoPostfilter(config.residual_filter) for _ in range(count)] if config.residual_filter else []
         self.communication_filters = [CommunicationEchoPostfilter(config.communication_filter) for _ in range(count)] if config.communication_filter else []
@@ -76,12 +83,29 @@ class AcousticEchoCanceller:
 
     def reset(self):
         for processor in (self.input_conditioner, self.reference_buffer, self.audio_synthesizer,
-                          self.communication_synthesizer, *self.filters, *self.refiners,
+                          self.communication_synthesizer, *self.filters, *self.tracking_filters, *self.refiners,
                           *self.residual_filters, *self.communication_filters):
             processor.reset()
+        self.path_errors.fill(0)
+        self.use_fast_path.fill(False)
         if self.reference_detector:
             self.reference_detector.reset()
         self.estimated_delay_samples = 0
+
+    def _select_echo_path(self, channel, microphone, primary):
+        fast = self.tracking_filters[channel]
+        clipped = self.input_conditioner.is_clipped
+        candidate = fast.process_block(microphone, self.reference_buffer, is_clipped=clipped)
+        if self.reference_buffer.is_active and not clipped:
+            errors = self.path_errors[channel]
+            errors *= .8
+            for index, path in enumerate((self.filters[channel], fast)):
+                errors[index] += .2*np.mean(path.residual_history[self.latency_samples:]**2)
+            if errors[1] < .9*errors[0]:
+                self.use_fast_path[channel] = True
+            elif errors[0] < .9*errors[1]:
+                self.use_fast_path[channel] = False
+        return candidate if self.use_fast_path[channel] else primary
 
     def process_block(self, microphone_audio, reference_audio, *, speech_mask=None, communication_mask=None):
         bins, channels = self.config.linear_filter.frequency_bin_count, self.config.input.microphone_count
@@ -96,12 +120,15 @@ class AcousticEchoCanceller:
         silent_frames = self.reference_detector.silent_frames if self.reference_detector else 0
         self.reference_buffer.process_block(reference, active, self.filters[0].residual_power)
         if self.config.enable_delay_estimation:
-            self.estimated_delay_samples = (self.filters[0].estimated_delay_samples if self.config.linear_filter.method == 'constrained'
-                else estimate_filter_delay(self.filters[0].adaptive_weights, self.latency_samples, self.config.input.reference_count))
+            delay_filter = self.tracking_filters[0] if self.use_fast_path[0] else self.filters[0]
+            self.estimated_delay_samples = (delay_filter.estimated_delay_samples if self.config.linear_filter.method == 'constrained'
+                else estimate_filter_delay(delay_filter.adaptive_weights, self.latency_samples, self.config.input.reference_count))
         residual, estimated = np.zeros((bins, channels), complex), np.zeros((bins, channels), complex)
         primary, communication = residual.copy(), residual.copy()
         for channel, processor in enumerate(self.filters):
             result = processor.process_block(microphone[:, channel], self.reference_buffer, is_clipped=self.input_conditioner.is_clipped)
+            if self.tracking_filters:
+                result = self._select_echo_path(channel, microphone[:, channel], result)
             error, echo = result.residual_spectrum, result.echo_spectrum
             if self.refiners:
                 refined = self.refiners[channel].process_frame(error, echo, self.reference_buffer.refinement_history,
