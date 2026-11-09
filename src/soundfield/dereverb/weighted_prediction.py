@@ -63,6 +63,7 @@ class WpeConfig:
     power: PredictionPowerConfig = field(default_factory=PredictionPowerConfig)
     adaptive_forgetting: AdaptiveForgettingConfig | None = field(default_factory=AdaptiveForgettingConfig)
     postfilter: ResidualSuppressionConfig | None = None
+    preserve_early_speech: bool = False
 
     def __post_init__(self):
         for name in ("frame_length_samples", "channel_count", "prediction_delay_frames", "filter_length_frames"):
@@ -70,6 +71,8 @@ class WpeConfig:
         nonnegative_integer(self.output_delay_frames, "output_delay_frames")
         if self.frame_length_samples < 4 or self.frame_length_samples % 2:
             raise ValueError("frame_length_samples must be even and at least four")
+        if not isinstance(self.preserve_early_speech, bool):
+            raise TypeError("preserve_early_speech must be boolean")
         if self.covariance_update not in ("full", "diagonal", "tap_block"):
             raise ValueError("covariance_update must be full, diagonal or tap_block")
         finite_scalar(self.forgetting_factor, "forgetting_factor", minimum=np.finfo(float).tiny, maximum=1)
@@ -81,9 +84,44 @@ class WpeConfig:
         if self.postfilter is not None and not isinstance(self.postfilter, ResidualSuppressionConfig):
             raise TypeError("postfilter must be a ResidualSuppressionConfig or None")
 
+    @classmethod
+    def low_latency(cls, *, channel_count=2):
+        """16 kHz, 512-point analysis and 256-sample hops with one frame of output delay."""
+        return cls(channel_count=channel_count, filter_length_frames=5, output_delay_frames=1,
+                   covariance_update="tap_block", adaptive_forgetting=None, preserve_early_speech=True)
+
     @property
     def frequency_bin_count(self):
         return self.frame_length_samples // 2 + 1
+
+
+class _EarlySpeechMixer:
+    """Protect spatially coherent speech when the input envelope has a low noise floor."""
+
+    def __init__(self, bins):
+        start = max(1, bins // 8)
+        stop = max(start + 1, bins // 2)
+        self.band = slice(start, stop)
+        self.power = np.zeros((stop-start, 2))
+        self.cross = np.zeros(stop-start, complex)
+        self.minimum_energy = None
+        self.maximum_energy = 0.
+
+    def mix(self, target, filtered):
+        fraction = .1
+        if target.shape[1] > 1:
+            pair = target[self.band][:, [0, -1]]
+            self.power = .94*self.power + .06*np.abs(pair)**2
+            self.cross = .94*self.cross + .06*pair[:, 0]*pair[:, 1].conj()
+            coherence = np.abs(self.cross)**2 / np.maximum(self.power[:, 0]*self.power[:, 1], 1e-24)
+            energy = np.mean(np.abs(target)**2)
+            if self.minimum_energy is None:
+                self.minimum_energy = energy
+            self.minimum_energy = min(energy, .99*self.minimum_energy + .01*energy)
+            self.maximum_energy = max(energy, .99*self.maximum_energy + .01*energy)
+            envelope_contrast = np.clip(1 - 10*self.minimum_energy/max(self.maximum_energy, 1e-24), 0, 1)
+            fraction += .9*envelope_contrast*np.clip((coherence.mean()-.3)/.65, 0, 1)
+        return filtered + fraction*(target-filtered)
 
 
 class WeightedPredictionDereverberator:
@@ -138,6 +176,7 @@ class WeightedPredictionDereverberator:
             self._inverse_covariance = np.broadcast_to(np.diag(diagonal), (bins, coefficients, coefficients)).astype(complex)
         self._power_history = np.zeros((bins, config.power.history_frames, channels))
         self._clean_power = np.zeros((bins, channels))
+        self._early_speech_mixer = _EarlySpeechMixer(bins) if config.preserve_early_speech else None
         self._psd = np.zeros((bins, 1))
         self._previous_output_power = np.zeros((bins, 1))
         self._wiener_gain = np.zeros((bins, 1))
@@ -219,9 +258,12 @@ class WeightedPredictionDereverberator:
         ratio = np.minimum(np.mean(np.abs(residual)**2, axis=1, keepdims=True)
                            / np.maximum(np.mean(np.abs(target)**2, axis=1, keepdims=True), floor), 1)
         self._wiener_gain = config.wiener_memory * self._wiener_gain + (1 - config.wiener_memory) * ratio
-        output = residual * self._wiener_gain
+        gain = np.sqrt(self._wiener_gain) if self._early_speech_mixer is not None else self._wiener_gain
+        output = residual * gain
         if self._postfilter is not None:
             output = self._postfilter.process_frame(output, prediction)
+        if self._early_speech_mixer is not None:
+            output = self._early_speech_mixer.mix(target, output)
         self._previous_output_power = np.mean(np.abs(output)**2, axis=1, keepdims=True)
         if config.adaptive_forgetting is not None:
             adaptation = config.adaptive_forgetting

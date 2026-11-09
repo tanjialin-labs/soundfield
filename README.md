@@ -49,6 +49,12 @@ python examples/room_measurement.py generate stimulus
 python examples/streaming_reconstruction.py input.wav output.wav --block-samples 1000
 ```
 
+16 kHz 语音可使用低延迟 WPE 配置。它采用 512 点分析、256 样本帧移和五个预测抽头，每个抽头保留麦克风之间的相关性。预测器额外输出延迟为一帧（16 ms）。整段文件可以补偿这段延迟并保留处理尾部。
+
+```sh
+python examples/dereverberation.py input.wav output.wav --low-latency --compensate-delay
+```
+
 ## 功能接口
 
 | 模块 | 主要功能 | 示例入口 |
