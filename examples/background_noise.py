@@ -13,7 +13,10 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--minimum-gain", type=float)
     mode.add_argument("--recurrent-model", type=Path)
+    parser.add_argument("--recognition-segment", action="store_true", help="Prepare one complete utterance for a speech recognizer")
     args = parser.parse_args()
+    if args.recognition_segment and args.recurrent_model is None:
+        parser.error("recognition preparation requires a recurrent model")
     if args.output.resolve() in {p.resolve() for p in (args.input, args.recurrent_model) if p is not None}:
         parser.error("input and output must differ")
     rate, audio = read_audio(args.input)
@@ -22,6 +25,9 @@ def main():
         output = RecurrentSpectrumEnhancer(args.recurrent_model).enhance_audio(audio, rate)
     else:
         output = suppress_background_noise(audio, rate, minimum_gain=.16 if args.minimum_gain is None else args.minimum_gain)
+    if args.recognition_segment:
+        from soundfield.neural.recognition_input import prepare_recognition_segment
+        output = prepare_recognition_segment(audio, output)
     write_audio(args.output, output, rate)
 
 
