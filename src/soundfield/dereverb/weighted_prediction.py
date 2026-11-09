@@ -128,8 +128,11 @@ class WeightedPredictionDereverberator:
         self._history = np.zeros((bins, history_length, channels), dtype=np.complex128)
         self._delayed_history = np.zeros((bins, history_length + config.output_delay_frames, channels), dtype=np.complex128)
         self._coefficients = np.zeros((bins, coefficients, channels), dtype=np.complex128)
-        covariance = np.diag(np.repeat(.5 ** np.arange(config.filter_length_frames), channels))
-        self._inverse_covariance = np.broadcast_to(covariance, (bins, coefficients, coefficients)).astype(complex).copy()
+        diagonal = np.repeat(.5 ** np.arange(config.filter_length_frames), channels)
+        if config.covariance_update == "diagonal":
+            self._inverse_covariance = np.tile(diagonal.astype(complex), (bins, 1))
+        else:
+            self._inverse_covariance = np.broadcast_to(np.diag(diagonal), (bins, coefficients, coefficients)).astype(complex)
         self._power_history = np.zeros((bins, config.power.history_frames, channels))
         self._clean_power = np.zeros((bins, channels))
         self._psd = np.zeros((bins, 1))
@@ -174,7 +177,10 @@ class WeightedPredictionDereverberator:
             psd = ((1 - power_config.error_blend) * self._previous_output_power
                    + power_config.error_blend * np.mean(np.abs(residual)**1.5, axis=1, keepdims=True) + floor)
         factor = self._forgetting_factor
-        numerator = np.einsum("fkl,fl->fk", self._inverse_covariance, history)
+        if config.covariance_update == "diagonal":
+            numerator = self._inverse_covariance * history
+        else:
+            numerator = np.einsum("fkl,fl->fk", self._inverse_covariance, history)
         denominator = factor * psd[:, 0] + np.sum(history.conj() * numerator, axis=1)
         kalman_gain = numerator / denominator[:, None]
         coefficient_update = kalman_gain[:, :, None] * residual[:, None, :].conj()
@@ -184,7 +190,7 @@ class WeightedPredictionDereverberator:
             self._inverse_covariance = (self._inverse_covariance - kalman_gain[:, :, None] * row[:, None, :]) / factor
         else:
             diagonal_update = kalman_gain * history.conj()
-            self._inverse_covariance = (self._inverse_covariance - diagonal_update[:, :, None] * self._inverse_covariance) / factor
+            self._inverse_covariance = (self._inverse_covariance - diagonal_update * self._inverse_covariance) / factor
         if config.output_delay_frames:
             self._delayed_history[:, :-1] = self._delayed_history[:, 1:].copy()
             self._delayed_history[:, -1] = spectrum
