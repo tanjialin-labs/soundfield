@@ -127,7 +127,7 @@ def design_circular_beam(radius_meters, microphone_count, center_degrees, *, hal
     phase = np.arange(microphone_count)*2*np.pi/microphone_count
     positions = radius_meters*np.stack((np.cos(phase), np.sin(phase), np.zeros_like(phase)), axis=1)
     bins = fft_length_samples//2+1
-    frequencies = np.fft.fftfreq(fft_length_samples, 1/sample_rate_hz)[:bins]
+    frequencies = np.fft.rfftfreq(fft_length_samples, 1/sample_rate_hz)
     steering = array_steering_vectors(positions, np.column_stack((np.full(72, 90), np.arange(72)*5)), frequencies)
     def indices(width):
         return np.arange(int((center_degrees-width)/5), int((center_degrees+width)/5)+1) % 72
@@ -212,7 +212,7 @@ def design_circular_blocking(radius_meters, microphone_count, *, half_width_degr
     phase = np.arange(microphone_count)*2*np.pi/microphone_count
     positions = radius_meters*np.stack((np.cos(phase), np.sin(phase), np.zeros_like(phase)), axis=1)
     bins = fft_length_samples//2+1
-    frequencies = np.fft.fftfreq(fft_length_samples, 1/sample_rate_hz)[:bins]
+    frequencies = np.fft.rfftfreq(fft_length_samples, 1/sample_rate_hz)
     result = np.zeros((bins, microphone_count, microphone_count-2, count), complex)
     for beam in range(count):
         center = beam*360/count
