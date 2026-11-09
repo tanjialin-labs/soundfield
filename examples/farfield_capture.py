@@ -6,6 +6,7 @@ import numpy as np
 from soundfield.io import read_audio, write_audio
 from soundfield.neural import MemoryNetwork, SpectralMaskEstimator
 from soundfield.enhancement import GainControlConfig
+from soundfield.beamforming import MaskGuidedConfig, MvdrConfig
 from soundfield.pipelines.farfield_capture import capture_farfield
 from soundfield.pipelines.source_separation import separate_sources
 from soundfield.separation import DemixingConfig
@@ -29,6 +30,7 @@ def main():
     parser.add_argument('--no-gain-control', action='store_true')
     parser.add_argument('--gain-settings', type=Path)
     parser.add_argument('--no-spatial-filter', action='store_true')
+    parser.add_argument('--reference-microphone', type=int, help='Preserve the selected microphone in spatial mode')
     parser.add_argument('--per-channel-mask', action='store_true')
     args = parser.parse_args()
     inputs = {path.resolve() for path in (args.input, args.network, args.normalization, args.feature_audio, args.evidence, args.gain_settings) if path}
@@ -42,6 +44,11 @@ def main():
         if min(args.channels) < 0 or max(args.channels) >= samples.shape[1] or len(set(args.channels)) != len(args.channels):
             parser.error('channels must select distinct zero-based input channels')
         samples = samples[:, args.channels]
+    spatial_config = None
+    if args.reference_microphone is not None:
+        if args.mode != 'spatial' or args.no_spatial_filter or not 0 <= args.reference_microphone < samples.shape[1]:
+            parser.error('reference microphone must identify an input to the active spatial filter')
+        spatial_config = MaskGuidedConfig(MvdrConfig(microphone_count=samples.shape[1], reference_microphone=args.reference_microphone))
     gain = args.digital_gain if args.digital_gain is not None else (2. if args.mode == 'spatial' else 4. if args.mode in ('fixed_direction', 'ambient') else 1.)
     feature_audio = None
     if args.feature_audio:
@@ -67,7 +74,7 @@ def main():
         config = None
     result = capture_farfield(samples, estimator, mode=args.mode, feature_audio=feature_audio, digital_gain=gain,
         gain_config=config, synthesis_scale=32768/32767 if args.mode in ('fixed_direction', 'ambient') else 1.,
-        enable_spatial_filter=not args.no_spatial_filter, ambient_shared_mask=not args.per_channel_mask, **evidence)
+        enable_spatial_filter=not args.no_spatial_filter, spatial_config=spatial_config, ambient_shared_mask=not args.per_channel_mask, **evidence)
     write_audio(args.output, result.audio, rate)
     if args.stages:
         np.savez_compressed(args.stages, **vars(result), sample_rate_hz=rate)
