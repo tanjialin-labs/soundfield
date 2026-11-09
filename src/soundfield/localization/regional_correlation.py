@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..contracts import positive_integer, finite_scalar, spectral_array
+from ..contracts import positive_integer, nonnegative_integer, finite_scalar, spectral_array
 
 
 @dataclass(frozen=True)
@@ -30,17 +30,28 @@ class RegionalCorrelationConfig:
         positive_integer(self.frequency_bin_count, 'frequency_bin_count')
         positive_integer(self.sample_rate_hz, 'sample_rate_hz')
         for band in (self.energy_bins, self.steering_bins, self.correlation_bins):
+            if len(band) != 2:
+                raise ValueError("frequency intervals must contain two indices")
+            nonnegative_integer(band[0], 'start bin')
+            positive_integer(band[1], 'stop bin')
             if not 0 <= band[0] < band[1] <= self.frequency_bin_count:
                 raise ValueError('frequency intervals must fit inside the spectrum')
+        positive_integer(self.rear_energy_stop_bin, 'rear_energy_stop_bin')
         if not self.energy_bins[0] < self.rear_energy_stop_bin <= self.frequency_bin_count:
             raise ValueError('rear energy interval is invalid')
         for name in ('scan_extent_meters', 'scan_step_meters', 'dominant_distance_meters'):
             finite_scalar(getattr(self, name), name, minimum=np.finfo(float).eps)
+        nonnegative_integer(self.excluded_lag_samples, 'excluded_lag_samples')
         if not 0 <= self.excluded_lag_samples < self.frequency_bin_count-1:
             raise ValueError('excluded lag interval is invalid')
-        if any(value <= 0 for pair in (self.energy_ratios, self.front_energy_ratios,
-                                      self.rear_energy_ratios, self.lag_limits_samples) for value in pair):
-            raise ValueError('energy ratios and lag limits must be positive')
+        for name in ('energy_ratios', 'front_energy_ratios', 'rear_energy_ratios', 'lag_limits_samples'):
+            pair = tuple(getattr(self, name))
+            if len(pair) != 2:
+                raise ValueError(f"{name} must contain two values")
+            for value in pair:
+                finite_scalar(value, name, minimum=np.finfo(float).tiny)
+            object.__setattr__(self, name, pair)
+
 
 
 class RegionalCorrelationEstimator:
@@ -52,6 +63,13 @@ class RegionalCorrelationEstimator:
         start, stop = config.steering_bins
         angular_frequency = 2*np.pi*np.arange(start, stop)/(config.frequency_bin_count-1)*(config.sample_rate_hz/2)
         self.steering_weights = np.exp(-1j*angular_frequency[:, None]*distances[None, :]/340)
+        length = 2 * (config.frequency_bin_count - 1)
+        lags = np.arange(length)
+        lags[lags > length // 2] -= length
+        valid = ((np.abs(lags) >= config.excluded_lag_samples) &
+                 (lags >= -config.lag_limits_samples[0]) & (lags <= config.lag_limits_samples[1]))
+        self._lag_indices = np.flatnonzero(valid)
+        self._lags = lags[valid]
         self.reset()
 
     def reset(self):
@@ -85,20 +103,21 @@ class RegionalCorrelationEstimator:
                 elif (first, second) == (0, 1):
                     start, stop = config.steering_bins
                     response = np.mean((correlation[start:stop, None]*self.steering_weights).real, axis=0)
-                    score = int(np.argmax(response))-(len(response)-1)/2
+                    score = int(np.argmax(response))-(len(response)-1)/2 if np.ptp(response) > 0 else 0.
                 else:
                     start, stop = config.correlation_bins
                     selected = np.zeros(config.frequency_bin_count, complex)
-                    selected[start:stop] = correlation[start:stop]
-                    full = np.concatenate((selected, selected[-2:0:-1].conj()))
-                    temporal = np.fft.ifft(np.exp(1j*np.angle(full))).real
-                    exclusion = config.excluded_lag_samples
-                    temporal[:exclusion] = 0
-                    temporal[-exclusion-1:] = 0
-                    position = int(np.argmax(temporal))+1
-                    backward, forward = (len(temporal)-position+1) % len(temporal), position-1
-                    score = (min(backward, config.lag_limits_samples[0]) if backward < forward
-                             else -min(forward, config.lag_limits_samples[1]))*340/config.sample_rate_hz/config.scan_step_meters
+                    cross = correlation[start:stop]
+                    magnitude = np.abs(cross)
+                    np.divide(cross, magnitude, out=selected[start:stop], where=magnitude > 0)
+                    response = np.fft.irfft(selected)[self._lag_indices]
+                    score = 0.0
+                    if response.size and response.max() > 0:
+                        peaks = self._lags[np.isclose(response, response.max(), rtol=1e-12, atol=0)]
+                        if len(peaks) == 1:
+                            score = -peaks[0] * 340 / config.sample_rate_hz / config.scan_step_meters
                 scores[first, second], scores[second, first] = score, -score
         self.pair_scores = scores
-        return scores.copy(), int(np.argmax(scores.sum(axis=1)))
+        totals = scores.sum(axis=1)
+        region = int(np.argmax(totals)) if np.ptp(totals) > 0 else None
+        return scores.copy(), region
