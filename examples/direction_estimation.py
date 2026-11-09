@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from soundfield import ShortTimeFourierTransform
@@ -16,17 +17,31 @@ def main():
     parser.add_argument("--method", choices=("subspace", "matching"), default="subspace")
     parser.add_argument("--spacing-meters", type=float, default=.035)
     parser.add_argument("--block-frames", type=int, default=40)
+    parser.add_argument("--frequency-voting", choices=("raw", "normalized", "coherent"), default="raw",
+                        help="combine subspace scores across frequency")
+    parser.add_argument("--band-hz", type=float, nargs=2, metavar=("LOW", "HIGH"))
     arguments = parser.parse_args()
+    if arguments.method == "matching" and arguments.frequency_voting != "raw":
+        parser.error("frequency voting requires the subspace method")
     if arguments.input.resolve() == arguments.output.resolve():
         parser.error("output must differ from input")
     rate, audio = read_audio(arguments.input)
     geometry = linear_array(audio.shape[1], arguments.spacing_meters)
+    band = (48, 151)
+    if arguments.band_hz is not None:
+        low, high = arguments.band_hz
+        if not 0 <= low < high <= rate / 2:
+            parser.error("band must lie between zero and Nyquist")
+        band = (math.ceil(low * 512 / rate), math.floor(high * 512 / rate) + 1)
+        if band[0] >= band[1]:
+            parser.error("band must include an FFT bin")
     if arguments.method == "subspace":
         engine = SubspaceDirectionEstimator(SubspaceDirectionConfig(geometry=geometry, sample_rate_hz=rate,
-                    block_frames=arguments.block_frames, search_all_directions=True))
+                    block_frames=arguments.block_frames, search_all_directions=True, analysis_band=band,
+                    frequency_voting=arguments.frequency_voting))
     else:
         engine = DirectionalMatchingEstimator(DirectionalMatchingConfig(geometry=geometry, sample_rate_hz=rate,
-                    block_frames=arguments.block_frames, event_delay_frames=0, periodic_estimation=True))
+                    block_frames=arguments.block_frames, event_delay_frames=0, periodic_estimation=True, analysis_band=band))
     spectrum = ShortTimeFourierTransform().analyze(audio)
     estimates = []
     for frame in range(spectrum.shape[1]):

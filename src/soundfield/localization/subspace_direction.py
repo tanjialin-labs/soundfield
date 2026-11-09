@@ -75,8 +75,11 @@ class SubspaceDirectionConfig:
     secondary_peak_separation_steps: int = 6
     noise_subspace: NoiseSubspaceConfig | None = None
     reflection_selection: ReflectionSelectionConfig | None = None
+    frequency_voting: str = "raw"
 
     def __post_init__(self):
+        if self.frequency_voting not in ("raw", "normalized", "coherent"):
+            raise ValueError("frequency_voting must be raw, normalized or coherent")
         if not isinstance(self.geometry, ArrayGeometry):
             raise TypeError("geometry must be an ArrayGeometry")
         for name in ("frame_length_samples", "sample_rate_hz", "block_frames", "source_count", "beam_count", "directions_per_beam"):
@@ -288,7 +291,15 @@ class SubspaceDirectionEstimator:
         power = np.sum(np.abs(projection)**2, axis=1)
         microphones = config.geometry.microphone_count
         power = np.maximum(power, microphones * np.finfo(float).eps)
-        scores[np.ix_(extended, used)] = (resolved[:, None] * microphones / power).T
+        spectra = resolved[:, None] * microphones / power
+        if config.frequency_voting != "raw":
+            peak = spectra.max(axis=1, keepdims=True)
+            np.divide(spectra, peak, out=spectra, where=peak > 0)
+            if config.frequency_voting == "coherent":
+                # Favor energy separated from the adjacent noise eigenvalue.
+                confidence = np.divide(gap, eigenvalues[:, -1], out=np.zeros_like(gap), where=resolved)
+                spectra *= (gap * confidence)[:, None]
+        scores[np.ix_(extended, used)] = spectra.T
         return scores, scan
 
     def _peaks(self, scores, scan):
