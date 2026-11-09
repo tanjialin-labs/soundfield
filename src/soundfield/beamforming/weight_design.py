@@ -204,23 +204,33 @@ def design_linear_blocking(microphone_positions_meters, passband_degrees, *, fft
 
 
 def design_circular_blocking(radius_meters, microphone_count, *, half_width_degrees=30., beam_count=None,
+                             centers_degrees=None,
                              fft_length_samples=512, sample_rate_hz=16000):
     """Build reversed subspace complements with layout-specific high-band references."""
     count = microphone_count if beam_count is None else beam_count
     for value, name in ((count, 'beam_count'), (fft_length_samples, 'fft_length_samples'), (sample_rate_hz, 'sample_rate_hz')):
         positive_integer(value, name)
     finite_scalar(radius_meters, 'radius_meters', minimum=np.finfo(float).eps)
-    finite_scalar(half_width_degrees, 'half_width_degrees', minimum=5, maximum=175)
+    finite_scalar(half_width_degrees, 'half_width_degrees', minimum=0, maximum=175)
     if microphone_count not in (4, 6) or fft_length_samples % 2:
         raise ValueError('circular blocking requires four or six microphones and an even FFT length')
+    if centers_degrees is None:
+        centers = np.arange(count) * (360 / count)
+    else:
+        centers = real_array(centers_degrees, "centers_degrees", 1)
+        if not centers.size or (beam_count is not None and count != len(centers)):
+            raise ValueError("centers_degrees must identify one direction per beam")
+        count = len(centers)
+        centers = centers % 360
     phase = np.arange(microphone_count)*2*np.pi/microphone_count
     positions = radius_meters*np.stack((np.cos(phase), np.sin(phase), np.zeros_like(phase)), axis=1)
     bins = fft_length_samples//2+1
     frequencies = np.fft.rfftfreq(fft_length_samples, 1/sample_rate_hz)
     result = np.zeros((bins, microphone_count, microphone_count-2, count), complex)
-    for beam in range(count):
-        center = beam*360/count
+    for beam, center in enumerate(centers):
         azimuths = np.arange(np.ceil((center-half_width_degrees)/5), np.floor((center+half_width_degrees)/5))*5 % 360
+        if not azimuths.size:
+            azimuths = [center % 360]
         angles = np.array([(polar, azimuth) for polar in (90, 110) for azimuth in azimuths])
         steering = array_steering_vectors(positions, angles, frequencies)
         for frequency, matrix in enumerate(steering):
