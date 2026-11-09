@@ -1,13 +1,14 @@
 """Process paired recordings in chunks and optionally save sample timing."""
 
 import argparse
+from dataclasses import replace
 import json
 from pathlib import Path
 
 import numpy as np
 
 from soundfield.aec import (CommunicationPostfilterConfig, EchoCancellationConfig, EchoCancellationStream,
-                            EchoFilterConfig, InputConditioningConfig, nonlinear_playback_reference)
+                            EchoFilterConfig, EchoRefinementConfig, InputConditioningConfig, nonlinear_playback_reference)
 from soundfield.io import read_audio, write_audio
 
 
@@ -24,6 +25,8 @@ def main():
                         help='pass full-band communication audio through while playback is inactive')
     parser.add_argument('--speaker-transition-amplitude', type=float,
                         help='expand mono playback to model loudspeaker saturation at this normalized amplitude')
+    parser.add_argument('--refine-echo', action='store_true',
+                        help='refine residual echo using playback history and previously fitted weights')
     args = parser.parse_args()
     rate, microphone = read_audio(args.microphone)
     reference_rate, reference = read_audio(args.reference)
@@ -35,6 +38,8 @@ def main():
                                     linear_filter=EchoFilterConfig(reference_count=reference.shape[1]), track_path_changes=args.fast_tracking,
                                     communication_filter=CommunicationPostfilterConfig(
                                         inactive_gain_policy='preserve_nearend' if args.preserve_nearend else 'wiener'))
+    if args.refine_echo:
+        config = replace(config, refinement=EchoRefinementConfig.predictive())
     stream = EchoCancellationStream(config, sample_rate_hz=rate)
     chunks = []
     for start in range(0, len(microphone), args.chunk_samples):
