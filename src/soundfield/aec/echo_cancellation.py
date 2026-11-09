@@ -27,6 +27,16 @@ class EchoCancellationConfig:
     enable_delay_estimation: bool = False
     track_path_changes: bool = False
 
+    @classmethod
+    def reverberant_playback(cls, microphone_count, reference_count):
+        """Track changing room paths with a twelve-partition filter and residual echo suppression."""
+        return cls(input=InputConditioningConfig(microphone_count=microphone_count,
+                                                 reference_count=reference_count, enable_preemphasis=False),
+                   linear_filter=EchoFilterConfig(reference_count=reference_count, partition_count=12,
+                                                  adaptation_rate=.08),
+                   residual_filter=ResidualEchoConfig(preserve_residual_power=True, coherence_scale=2.4),
+                   communication_filter=None, track_path_changes=True)
+
     def __post_init__(self):
         if self.track_path_changes and self.linear_filter.method != 'constrained':
             raise ValueError('path tracking requires a constrained filter')
