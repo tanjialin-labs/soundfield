@@ -226,6 +226,8 @@ class DirectionalMatchingEstimator:
                     allowed[angles > 90] = False
                 elif left == 0 and right != 1:
                     allowed[angles < 90] = False
+        if config.search_all_directions:
+            allowed[:] = True
         if config.exclude_endfire_peaks:
             allowed[[0, -1]] = False
         scores *= allowed
