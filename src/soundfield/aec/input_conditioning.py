@@ -8,6 +8,21 @@ from scipy.signal import lfilter
 from ..contracts import positive_integer, finite_scalar, audio_array
 
 
+def nonlinear_playback_reference(playback_audio, *, transition_amplitude):
+    """Expand mono playback into linear and bounded odd nonlinear reference channels.
+
+    The second channel changes polarity at the specified absolute playback
+    amplitude. Both channels can be processed by one two-reference echo filter.
+    """
+    playback = audio_array(playback_audio)
+    if playback.shape[1] != 1:
+        raise ValueError('nonlinear playback expansion requires a mono reference')
+    finite_scalar(transition_amplitude, 'transition_amplitude', minimum=np.finfo(float).eps)
+    amplitude = np.abs(playback)
+    gain = (transition_amplitude - amplitude) / (transition_amplitude + amplitude)
+    return np.column_stack((playback, playback * gain))
+
+
 @dataclass(frozen=True)
 class InputConditioningConfig:
     hop_length_samples: int = 512

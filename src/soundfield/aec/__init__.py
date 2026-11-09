@@ -1,6 +1,6 @@
 """Acoustic echo estimation, cancellation and residual suppression."""
 
-from .input_conditioning import EchoInputConditioner, InputConditioningConfig, ReferenceActivityDetector, ReferenceActivityConfig
+from .input_conditioning import EchoInputConditioner, InputConditioningConfig, ReferenceActivityDetector, ReferenceActivityConfig, nonlinear_playback_reference
 from .reference_spectrum import EchoFilterConfig, ReferenceSpectrumBuffer
 from .partitioned_filter import PartitionedEchoFilter, EchoSpectrumResult
 from .echo_refinement import CovarianceEchoRefiner, EchoRefinementConfig
@@ -15,7 +15,7 @@ from .iterative_cancellation import IterativeEchoCanceller, IterativeEchoConfig
 from .playback_adaptation import PlaybackAdaptiveEchoFilter, PlaybackEchoConfig, PlaybackEchoResult
 from .playback_postfilter import PlaybackResidualSuppressor, PlaybackPostfilterConfig
 
-__all__ = ['EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivityDetector', 'ReferenceActivityConfig',
+__all__ = ['nonlinear_playback_reference', 'EchoInputConditioner', 'InputConditioningConfig', 'ReferenceActivityDetector', 'ReferenceActivityConfig',
            'EchoFilterConfig', 'ReferenceSpectrumBuffer', 'PartitionedEchoFilter', 'EchoSpectrumResult',
            'CovarianceEchoRefiner', 'EchoRefinementConfig', 'CorrelationDelayEstimator', 'CorrelationDelayConfig',
            'estimate_filter_delay', 'EchoAudioSynthesizer', 'ResidualEchoPostfilter', 'ResidualEchoConfig',

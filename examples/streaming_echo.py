@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from soundfield.aec import (CommunicationPostfilterConfig, EchoCancellationConfig, EchoCancellationStream,
-                            EchoFilterConfig, InputConditioningConfig)
+                            EchoFilterConfig, InputConditioningConfig, nonlinear_playback_reference)
 from soundfield.io import read_audio, write_audio
 
 
@@ -22,11 +22,15 @@ def main():
     parser.add_argument('--fast-tracking', action='store_true', help='track changing echo paths with bounded updates')
     parser.add_argument('--preserve-nearend', action='store_true',
                         help='pass full-band communication audio through while playback is inactive')
+    parser.add_argument('--speaker-transition-amplitude', type=float,
+                        help='expand mono playback to model loudspeaker saturation at this normalized amplitude')
     args = parser.parse_args()
     rate, microphone = read_audio(args.microphone)
     reference_rate, reference = read_audio(args.reference)
     if rate != reference_rate or len(microphone) != len(reference) or args.chunk_samples < 1:
         parser.error('paired recordings need equal sample rates and lengths; chunk size must be positive')
+    if args.speaker_transition_amplitude is not None:
+        reference = nonlinear_playback_reference(reference, transition_amplitude=args.speaker_transition_amplitude)
     config = EchoCancellationConfig(input=InputConditioningConfig(microphone_count=microphone.shape[1], reference_count=reference.shape[1]),
                                     linear_filter=EchoFilterConfig(reference_count=reference.shape[1]), track_path_changes=args.fast_tracking,
                                     communication_filter=CommunicationPostfilterConfig(
