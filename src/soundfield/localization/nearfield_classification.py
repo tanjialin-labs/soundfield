@@ -94,6 +94,8 @@ class NearfieldSpatialClassifier:
         distances = np.asarray(config.scan_distances_meters)
         first_half = positions[:len(positions) // 2] ** 2
         squared_pairs = np.concatenate((first_half, first_half[::-1]))
+        self._has_direction = frequency > 0
+        self._has_curvature = (np.ptp(squared_pairs) > 0) & (np.abs(np.cos(angles)) > 32 * np.finfo(float).eps)
         linear = -2 * np.pi * positions[:, None] * np.sin(angles)[None]
         curvature = np.pi * squared_pairs[:, None, None] * np.cos(angles)[None, :, None] ** 2 / distances
         phase = (linear[:, :, None] + curvature)[None] * frequency[:, None, None, None] / config.sound_speed_meters_per_second
@@ -128,7 +130,7 @@ class NearfieldSpatialClassifier:
         channels = len(config.microphone_positions_meters)
         for offset, index in enumerate(range(config.start_bin, config.stop_bin)):
             samples = self._history[index].T
-            if not np.any(samples):
+            if not self._has_direction[offset] or not np.any(samples):
                 continue
             covariance = samples @ samples.conj().T / config.block_frames
             diagonal = np.abs(np.diag(covariance))
@@ -141,6 +143,8 @@ class NearfieldSpatialClassifier:
             maximum = int(np.argmax(np.abs(score)))
             angle_index, distance_index = np.unravel_index(maximum, self._responses.shape[2:], order="F")
             angle, distance = config.scan_angles_degrees[angle_index], config.scan_distances_meters[distance_index]
+            if not self._has_curvature[angle_index]:
+                distance = np.nan
             angle_results[offset], distance_results[offset] = angle, distance
             inside = config.minimum_angle_degrees <= angle <= config.maximum_angle_degrees and distance <= config.maximum_distance_meters
             gains = np.full(output.shape[-1], 1 - config.focus_gain if inside else config.focus_gain)
