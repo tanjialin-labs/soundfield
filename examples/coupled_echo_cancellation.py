@@ -15,6 +15,7 @@ def main():
     parser.add_argument('microphone', type=Path)
     parser.add_argument('reference', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--noise-window-ms', type=float, help='Duration of the noise-minimum tracking window')
     args = parser.parse_args()
     if args.output.resolve() in (args.microphone.resolve(), args.reference.resolve()):
         parser.error('output must differ from audio inputs')
@@ -23,6 +24,11 @@ def main():
     if rate != 16000 or reference_rate != rate or len(microphone) != len(reference):
         parser.error('audio must be aligned at 16000 Hz')
     config = CoupledEchoConfig()
+    if args.noise_window_ms is not None:
+        if not np.isfinite(args.noise_window_ms) or args.noise_window_ms <= 0:
+            parser.error('noise window must be positive and finite')
+        frames = max(1, round(args.noise_window_ms * rate / (1000 * config.postfilter.hop_length_samples)))
+        config = replace(config, postfilter=replace(config.postfilter, minimum_window_frames=frames))
     config = replace(config, input=replace(config.input, microphone_count=microphone.shape[1], reference_count=reference.shape[1]),
                      linear_filter=replace(config.linear_filter, reference_count=reference.shape[1]))
     engine = CoupledEchoCanceller(config)
