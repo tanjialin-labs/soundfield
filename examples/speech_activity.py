@@ -16,14 +16,17 @@ def main():
     parser.add_argument('output',type=Path)
     parser.add_argument('--model',type=Path,required=True)
     parser.add_argument("--decisions", action="store_true", help="Include hysteretic activity decisions")
+    parser.add_argument("--energy-range-db", type=float, help="Energy range below a recent speech peak for activity decisions")
     args=parser.parse_args()
+    if args.energy_range_db is not None and not args.decisions:
+        parser.error('energy range requires activity decisions')
     if args.output.resolve() in (args.input.resolve(),args.model.resolve()):
         parser.error('output must differ from input resources')
     rate,audio=read_audio(args.input)
     if rate!=16000:parser.error('speech activity requires 16000 Hz audio')
     processor=SpeechActivityDetector(SpeechActivityModel.load(args.model),audio.shape[1])
     results=[]
-    gate=SpeechActivityGate(audio.shape[1]) if args.decisions else None
+    gate=SpeechActivityGate(audio.shape[1],energy_range_db=args.energy_range_db) if args.decisions else None
     for start in range(0,len(audio)+processor.latency_samples,160):
         block=audio[start:start+160]
         probability=processor.process_block(np.pad(block,((0,160-len(block)),(0,0))))
@@ -31,7 +34,8 @@ def main():
         if 0 <= target < len(audio):
             row=dict(start_sample=target,valid_samples=min(160,len(audio)-target),speech_probability=probability.tolist())
             if gate is not None:
-                row['active']=gate.process_frame(probability).tolist()
+                power=np.mean(audio[target:target+160]**2,axis=0)
+                row['active']=gate.process_frame(probability,frame_power=power).tolist()
             results.append(row)
     args.output.write_text(json.dumps(results,indent=2,allow_nan=False)+'\n')
 

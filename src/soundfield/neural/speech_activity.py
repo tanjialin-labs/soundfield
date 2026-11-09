@@ -110,12 +110,17 @@ class SpeechActivityDetector:
 class SpeechActivityGate:
     """Per-channel hysteresis with bounded hangover, measured in probability frames."""
 
-    def __init__(self, channel_count=1, *, onset_probability=.55, release_probability=.35, hold_frames=3):
+    def __init__(self, channel_count=1, *, onset_probability=.55, release_probability=.35, hold_frames=3,
+                 energy_range_db=None):
         from ..contracts import finite_scalar, nonnegative_integer
         positive_integer(channel_count, 'channel_count')
         finite_scalar(onset_probability, 'onset_probability', minimum=0, maximum=1)
         finite_scalar(release_probability, 'release_probability', minimum=0, maximum=onset_probability)
         nonnegative_integer(hold_frames, 'hold_frames')
+        if energy_range_db is not None:
+            finite_scalar(energy_range_db, 'energy_range_db', minimum=0)
+        self.energy_ratio = None if energy_range_db is None else 10**(-energy_range_db/10)
+        self.recent_peak_power = np.zeros(channel_count)
         self.onset = onset_probability
         self.release = release_probability
         self.hold = hold_frames
@@ -123,12 +128,19 @@ class SpeechActivityGate:
         self._active = np.zeros(channel_count, bool)
 
     def reset(self):
+        self.recent_peak_power.fill(0.)
         self._active.fill(False)
         self._remaining.fill(0)
 
-    def process_frame(self, probability):
+    def process_frame(self, probability, *, frame_power=None):
         from ..contracts import unit_interval_array
         values = unit_interval_array(probability, 'probability', self._active.shape)
+        if self.energy_ratio is not None:
+            power = real_array(frame_power, 'frame_power', 1)
+            if power.shape != values.shape or np.any(power < 0):
+                raise ValueError('frame_power must contain one nonnegative mean square per channel')
+            self.recent_peak_power = np.maximum(power, .999*self.recent_peak_power)
+            values = np.where(power >= np.maximum(1e-10, self.energy_ratio*self.recent_peak_power), values, 0.)
         present = values >= np.where(self._active, self.release, self.onset)
         self._active = present | (self._remaining > 0)
         self._remaining = np.where(present, self.hold, np.maximum(self._remaining-1, 0))
