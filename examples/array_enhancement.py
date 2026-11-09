@@ -21,6 +21,8 @@ def main():
     parser.add_argument("--speech-mask", type=Path)
     parser.add_argument("--postfilter", action="store_true")
     parser.add_argument("--disable-gate-attenuation", action="store_true")
+    parser.add_argument("--protect-target-bins", action="store_true",
+                        help="reduce adaptive cancellation where the gate favors the target")
     arguments = parser.parse_args()
     resources = [arguments.input, arguments.beam_bank]
     if arguments.speech_mask:
@@ -33,6 +35,7 @@ def main():
         NlmsConfig(sample_rate_hz=sample_rate, reference_count=bank.reference_count),
         AdaptationGateConfig(arguments.strategy),
         enable_gate_attenuation=not arguments.disable_gate_attenuation,
+        protect_target_bins=arguments.protect_target_bins,
         postfilter=ReferencePostfilterConfig() if arguments.postfilter else None,
     )
     mask = np.load(arguments.speech_mask, allow_pickle=False) if arguments.speech_mask else None

@@ -19,12 +19,15 @@ class SidelobeConfig:
     attenuation_offset: float = .2
     attenuation_floor: float = 0.0
     postfilter: ReferencePostfilterConfig | None = None
+    protect_target_bins: bool = False
 
     def __post_init__(self):
         if not isinstance(self.adaptive_filter, NlmsConfig) or not isinstance(self.adaptation_gate, AdaptationGateConfig):
             raise TypeError("adaptive_filter and adaptation_gate must be configuration objects")
         if not isinstance(self.enable_gate_attenuation, bool):
             raise ValueError("enable_gate_attenuation must be boolean")
+        if not isinstance(self.protect_target_bins, bool):
+            raise ValueError("protect_target_bins must be boolean")
         for name in ("attenuation_offset", "attenuation_floor"):
             finite_scalar(getattr(self, name), name, minimum=0, maximum=1)
         if self.postfilter is not None and not isinstance(self.postfilter, ReferencePostfilterConfig):
@@ -63,7 +66,10 @@ class GeneralizedSidelobeCanceller:
         beams, references = self._bank.project(frame)
         strength = self._gate.process_frame(frame)
         reference = references[:, :, self._beam_index]
-        output = self._canceller.process_frame(beams[:, self._beam_index:self._beam_index + 1], reference, strength)
+        target = beams[:, self._beam_index:self._beam_index + 1]
+        output = self._canceller.process_frame(target, reference, strength)
+        if self.config.protect_target_bins:
+            output = (1 - strength) * target + strength * output
         if self.config.enable_gate_attenuation:
             attenuation = np.maximum(self.config.attenuation_floor, np.minimum(1 - strength + self.config.attenuation_offset, 1))
             output *= attenuation
