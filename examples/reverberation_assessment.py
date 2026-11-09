@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--microphones", type=int, nargs=2, default=(0, 1))
     parser.add_argument("--spacing-meters", type=float, default=.03)
     parser.add_argument("--azimuth-degrees", type=float, default=90)
+    parser.add_argument("--microphone-model",choices=("binaural","free_field"),default="binaural")
     arguments = parser.parse_args()
     if arguments.input.resolve() == arguments.output.resolve():
         parser.error("output must differ from input")
@@ -22,7 +23,7 @@ def main():
     if rate != 16000:
         parser.error("this example uses 16 kHz frequency intervals")
     config = BinauralReverberationConfig(microphone_indices=tuple(arguments.microphones), microphone_spacing_meters=arguments.spacing_meters,
-                                         azimuth_degrees=arguments.azimuth_degrees)
+                                         azimuth_degrees=arguments.azimuth_degrees,microphone_model=arguments.microphone_model)
     result = BinauralReverberationEstimator(config).evaluate(audio)
     arguments.output.write_text(json.dumps(dict(low_band_db=result.low_band_db, high_band_db=result.high_band_db), indent=2) + "\n")
 

@@ -42,8 +42,13 @@ class BinauralReverberationConfig:
     averaging_start_frame: int = 184
     averaging_stop_frame: int = 200
     reference_cancellation: ReferenceCancellationConfig | None = field(default_factory=ReferenceCancellationConfig)
+    microphone_model: str = "binaural"
+    sound_speed_meters_per_second: float = 343.
 
     def __post_init__(self):
+        if self.microphone_model not in ("binaural","free_field"):
+            raise ValueError("microphone_model must be binaural or free_field")
+        finite_scalar(self.sound_speed_meters_per_second,"sound_speed_meters_per_second",minimum=1)
         for name in ("sample_rate_hz", "fft_length_samples", "averaging_stop_frame"):
             positive_integer(getattr(self, name), name)
         nonnegative_integer(self.averaging_start_frame, "averaging_start_frame")
@@ -157,13 +162,19 @@ class BinauralReverberationEstimator:
                          + np.arange(scan_count) * config.scan_step_degrees, 0, 180)
         frequency = np.linspace(0, config.sample_rate_hz / 2, config.fft_length_samples // 2 + 1)
         spacing = config.microphone_spacing_meters
-        diffuse = np.sinc(8.8 * frequency * spacing / 680) / np.sqrt(1 + (2 * np.pi * frequency * spacing / 680) ** 4)
-        radians = np.deg2rad(angles - 90)
-        delay = spacing / 680 * (radians + np.sin(radians))
-        left = 1.05 + .95 * np.cos(1.2 * (radians + np.pi / 2))
-        right = 1.05 + .95 * np.cos(1.2 * (radians - np.pi / 2))
-        level = np.sqrt((4 * (680 / spacing) ** 2 + (2 * np.pi * frequency[:, None] * right) ** 2)
-                        / (4 * (680 / spacing) ** 2 + (2 * np.pi * frequency[:, None] * left) ** 2))
+        if config.microphone_model == "free_field":
+            speed = config.sound_speed_meters_per_second
+            diffuse = np.sinc(2*frequency*spacing/speed)
+            delay = spacing*np.cos(np.deg2rad(angles))/speed
+            level = np.ones((len(frequency),len(angles)))
+        else:
+            diffuse = np.sinc(8.8 * frequency * spacing / 680) / np.sqrt(1 + (2 * np.pi * frequency * spacing / 680) ** 4)
+            radians = np.deg2rad(angles - 90)
+            delay = spacing / 680 * (radians + np.sin(radians))
+            left = 1.05 + .95 * np.cos(1.2 * (radians + np.pi / 2))
+            right = 1.05 + .95 * np.cos(1.2 * (radians - np.pi / 2))
+            level = np.sqrt((4 * (680 / spacing) ** 2 + (2 * np.pi * frequency[:, None] * right) ** 2)
+                            / (4 * (680 / spacing) ** 2 + (2 * np.pi * frequency[:, None] * left) ** 2))
         epsilon = np.finfo(float).eps
         window = np.sqrt(.5 - .5 * np.cos(2 * np.pi * np.arange(320) / 320))
         frame = np.zeros((320, 2))
