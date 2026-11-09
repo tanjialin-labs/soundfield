@@ -25,7 +25,8 @@ def main():
     fixed = np.empty((*spectrum.shape[:2], bank.beam_count), dtype=complex)
     blocked = np.empty((*spectrum.shape[:2], bank.reference_count, bank.beam_count), dtype=complex)
     strength = np.empty(fixed.shape)
-    gates = [AdaptationGate(bank, index, AdaptationGateConfig()) for index in range(bank.beam_count)]
+    gate = AdaptationGateConfig("spatial_amplitude" if bank.beam_count > 1 else "diffuse_amplitude")
+    gates = [AdaptationGate(bank, index, gate) for index in range(bank.beam_count)]
     for frame in range(spectrum.shape[1]):
         fixed[:, frame], blocked[:, frame] = bank.project(spectrum[:, frame])
         for index, gate in enumerate(gates):

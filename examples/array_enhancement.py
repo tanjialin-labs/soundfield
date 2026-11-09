@@ -17,7 +17,7 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--beam-bank", type=Path, required=True)
-    parser.add_argument("--strategy", choices=("continuous", "spatial_power", "spatial_amplitude", "diffuse_amplitude", "speech_mask"), default="spatial_amplitude")
+    parser.add_argument("--strategy", choices=("continuous", "spatial_power", "spatial_amplitude", "diffuse_amplitude", "speech_mask"))
     parser.add_argument("--speech-mask", type=Path)
     parser.add_argument("--postfilter", action="store_true")
     parser.add_argument("--disable-gate-attenuation", action="store_true")
@@ -31,10 +31,11 @@ def main():
         parser.error("output must differ from every input resource")
     bank = load_beam_bank(arguments.beam_bank)
     sample_rate, audio = read_audio(arguments.input)
+    strategy = arguments.strategy or ("spatial_amplitude" if bank.beam_count > 1 else "diffuse_amplitude")
     config = SidelobeConfig(
         NlmsConfig(frame_length_samples=2 * (bank.frequency_bin_count - 1), sample_rate_hz=sample_rate,
                    reference_count=bank.reference_count),
-        AdaptationGateConfig(arguments.strategy),
+        AdaptationGateConfig(strategy),
         enable_gate_attenuation=not arguments.disable_gate_attenuation,
         protect_target_bins=arguments.protect_target_bins,
         postfilter=ReferencePostfilterConfig.for_grid(bank.frequency_bin_count, sample_rate) if arguments.postfilter else None,
