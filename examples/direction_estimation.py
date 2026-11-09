@@ -1,4 +1,4 @@
-"""Estimate azimuths for a linear array and save event results as JSON."""
+"""Estimate azimuths for a linear or circular array and save event results as JSON."""
 
 import argparse
 import json
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from soundfield import ShortTimeFourierTransform
 from soundfield.io import read_audio
-from soundfield.localization import DirectionalMatchingConfig, DirectionalMatchingEstimator, SubspaceDirectionConfig, SubspaceDirectionEstimator, linear_array
+from soundfield.localization import DirectionalMatchingConfig, DirectionalMatchingEstimator, SubspaceDirectionConfig, SubspaceDirectionEstimator, circular_array, linear_array
 
 
 def main():
@@ -15,6 +15,8 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--method", choices=("subspace", "matching"), default="subspace")
+    parser.add_argument("--array", choices=("linear", "circular"), default="linear")
+    parser.add_argument("--radius-meters", type=float, default=.035)
     parser.add_argument("--spacing-meters", type=float, default=.035)
     parser.add_argument("--block-frames", type=int, default=40)
     parser.add_argument("--frequency-voting", choices=("raw", "normalized", "coherent"), default="raw",
@@ -26,7 +28,9 @@ def main():
     if arguments.input.resolve() == arguments.output.resolve():
         parser.error("output must differ from input")
     rate, audio = read_audio(arguments.input)
-    geometry = linear_array(audio.shape[1], arguments.spacing_meters)
+    circular = arguments.array == "circular"
+    geometry = (circular_array(audio.shape[1], arguments.radius_meters) if circular
+                else linear_array(audio.shape[1], arguments.spacing_meters))
     band = (48, 151)
     if arguments.band_hz is not None:
         low, high = arguments.band_hz
@@ -36,17 +40,22 @@ def main():
         if band[0] >= band[1]:
             parser.error("band must include an FFT bin")
     if arguments.method == "subspace":
+        grid = dict(beam_count=4, directions_per_beam=18, beam_width_degrees=90, grid_step_degrees=5,
+                    azimuth_offset_degrees=0, search_half_width_steps=9, circular_search=True) if circular else {}
         engine = SubspaceDirectionEstimator(SubspaceDirectionConfig(geometry=geometry, sample_rate_hz=rate,
                     block_frames=arguments.block_frames, search_all_directions=True, analysis_band=band,
-                    frequency_voting=arguments.frequency_voting))
+                    frequency_voting=arguments.frequency_voting, **grid))
     else:
+        grid = dict(scan_angles_degrees=tuple(range(0,360,5)),
+                    beam_intervals_degrees=((315,45),(45,135),(135,225),(225,315)),
+                    circular_search=True, center_beam_constraint=False) if circular else {}
         engine = DirectionalMatchingEstimator(DirectionalMatchingConfig(geometry=geometry, sample_rate_hz=rate,
-                    block_frames=arguments.block_frames, event_delay_frames=0, periodic_estimation=True, analysis_band=band))
+                    block_frames=arguments.block_frames, event_delay_frames=0, periodic_estimation=True, analysis_band=band, **grid))
     spectrum = ShortTimeFourierTransform().analyze(audio)
     estimates = []
     for frame in range(spectrum.shape[1]):
         if arguments.method == "subspace":
-            result = engine.estimate(spectrum[:, frame], wake_confidence=[1, 1, 1] if (frame + 1) % arguments.block_frames == 0 else None)
+            result = engine.estimate(spectrum[:, frame], wake_confidence=[1] * engine.config.beam_count if (frame + 1) % arguments.block_frames == 0 else None)
         else:
             result = engine.estimate(spectrum[:, frame])
         if result is not None:
