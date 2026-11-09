@@ -8,19 +8,25 @@ from ..neural.band_features import round_away_from_zero
 
 
 def track_speech_directions(spectrum, direction_scores, selected_channels, mask_estimator, *,
-                            config=SpeechDirectionConfig(), speech_bins=(15,64)):
+                            config=SpeechDirectionConfig(), speech_bins=(15,64), search_regions=None, circular_search=False):
     """Return one direction index per normalized spectral frame; -1 denotes inactivity."""
     spectrum=spectral_array(spectrum)
     scores=real_array(direction_scores,'direction_scores',2)
     selected=np.asarray(selected_channels)
     bins,frames,channels=spectrum.shape
+    if search_regions is None:
+        if scores.shape[0] != 27:
+            raise ValueError("supply search_regions for a custom direction grid")
+        search_regions = ((0,15),(7,20),(13,27))
+    regions = tuple(search_regions)
     if (bins!=mask_estimator.config.frequency_bin_count or channels!=mask_estimator.channel_count
-            or scores.shape!=(27,frames) or selected.shape!=(frames,) or selected.dtype.kind not in 'iu'
-            or np.any(selected<0) or np.any(selected>=min(3,channels)) or np.any(scores<0)):
+            or scores.shape[1]!=frames or selected.shape!=(frames,) or selected.dtype.kind not in 'iu'
+            or np.any(selected<0) or np.any(selected>=min(len(regions),channels)) or np.any(scores<0)):
         raise ValueError('spectra, directional scores and selected channels must have aligned frames')
     start,stop=speech_bins
     if not 0<=start<stop<=bins:raise ValueError('speech_bins must fit inside the spectrum')
-    tracker=SpeechGatedDirectionTracker(config)
+    tracker=SpeechGatedDirectionTracker(config, search_regions=regions, direction_count=scores.shape[0],
+                                      circular_search=circular_search)
     mask_estimator.reset()
     output=np.full(frames,-1,int)
     for frame in range(frames+mask_estimator.config.right_context_frames):
