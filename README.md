@@ -55,6 +55,12 @@ python examples/streaming_reconstruction.py input.wav output.wav --block-samples
 python examples/dereverberation.py input.wav output.wav --low-latency --compensate-delay
 ```
 
+固定双麦录音中的两个说话人可用整段拟合模式分离。该模式从完整录音估计每个频点的解混矩阵，返回映射到参考麦克风的两路输出。逐帧输入使用 `OnlineSourceSeparator`。
+
+```sh
+python examples/source_separation.py mixture.wav separated.wav --stationary-pair
+```
+
 ## 功能接口
 
 | 模块 | 主要功能 | 示例入口 |

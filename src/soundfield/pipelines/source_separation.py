@@ -2,8 +2,9 @@
 
 import numpy as np
 
-from ..contracts import audio_array
+from ..contracts import audio_array, nonnegative_integer, positive_integer
 from ..separation import DemixingConfig, OnlineSourceSeparator
+from ..separation.stationary_pair import render_stationary_pair
 from ..transform import FourierConfig, ShortTimeFourierTransform
 
 
@@ -27,3 +28,16 @@ def separate_sources(audio, config: DemixingConfig | None = None, *, transform_c
     for frame in range(spectrum.shape[1]):
         output[:, frame] = separator.process_frame(spectrum[:, frame])
     return transform.synthesize(output, length_samples=len(samples))
+
+
+def separate_stationary_pair(audio, *, iterations=12, reference_channel_index=1, transform_config=None):
+    """Separate two microphones using one demixing matrix per bin fitted to the entire recording."""
+    samples = audio_array(audio)
+    positive_integer(iterations, "iterations")
+    nonnegative_integer(reference_channel_index, "reference_channel_index")
+    if samples.shape[1] != 2 or reference_channel_index >= 2:
+        raise ValueError("stationary pair separation requires two microphones and a valid reference channel")
+    transform = ShortTimeFourierTransform(transform_config or FourierConfig(4096, 2048))
+    spectrum = transform.analyze(samples)
+    render_stationary_pair(spectrum, iterations, reference_channel_index)
+    return transform.synthesize(spectrum, length_samples=len(samples))
