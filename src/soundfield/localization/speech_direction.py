@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..contracts import real_array, positive_integer, finite_scalar
+from ..contracts import real_array, positive_integer, finite_scalar, nonnegative_integer
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,9 @@ class SpeechGatedDirectionTracker:
         positive_integer(direction_count, 'direction_count')
         self.config, self.direction_count = config, direction_count
         self.search_regions = tuple(search_regions)
+        for start, stop in self.search_regions:
+            nonnegative_integer(start, "region start")
+            positive_integer(stop, "region stop")
         if not self.search_regions or any(start < 0 or stop <= start or stop > direction_count
                                           for start, stop in self.search_regions):
             raise ValueError('search regions must be nonempty half-open direction intervals')
@@ -48,18 +51,20 @@ class SpeechGatedDirectionTracker:
         finite_scalar(speech_evidence, 'speech_evidence', minimum=0)
         if scores.shape != (self.direction_count,) or np.any(scores < 0):
             raise ValueError('direction_scores must be nonnegative and match direction_count')
-        if not isinstance(selected_channel, (int, np.integer)) or not 0 <= selected_channel < len(self.search_regions):
+        if isinstance(selected_channel, bool) or not isinstance(selected_channel, (int, np.integer)) or not 0 <= selected_channel < len(self.search_regions):
             raise ValueError('selected_channel is outside the search regions')
         index = self.direction_history[-1]
-        if speech_evidence > self.config.speech_threshold:
+        start, stop = self.search_regions[selected_channel]
+        if index >= 0 and not start <= index < stop:
+            index = -2-self.config.peak_distance_bins
+        if speech_evidence > self.config.speech_threshold and np.any(scores[start:stop] > 0):
             self.silent_frames = 0
             self.smoothed_scores *= self.config.smoothing
             self.smoothed_scores += (1-self.config.smoothing)*scores
             masked = np.zeros_like(scores)
-            start, stop = self.search_regions[selected_channel]
             masked[start:stop] = self.smoothed_scores[start:stop]
             candidates = np.flatnonzero(masked > masked.max()*0.5)
-            if not candidates.size or np.min(np.abs(candidates-index)) > self.config.peak_distance_bins:
+            if candidates.size and (index < 0 or np.min(np.abs(candidates-index)) > self.config.peak_distance_bins):
                 index = int(np.argmax(masked))
         else:
             self.silent_frames += 1
