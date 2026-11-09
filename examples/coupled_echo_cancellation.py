@@ -16,6 +16,7 @@ def main():
     parser.add_argument('reference', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--noise-window-ms', type=float, help='Duration of the noise-minimum tracking window')
+    parser.add_argument('--require-echo-for-double-talk', action='store_true')
     args = parser.parse_args()
     if args.output.resolve() in (args.microphone.resolve(), args.reference.resolve()):
         parser.error('output must differ from audio inputs')
@@ -24,6 +25,8 @@ def main():
     if rate != 16000 or reference_rate != rate or len(microphone) != len(reference):
         parser.error('audio must be aligned at 16000 Hz')
     config = CoupledEchoConfig()
+    if args.require_echo_for_double_talk:
+        config = replace(config, speech_detection=replace(config.speech_detection,require_echo_for_double_talk=True))
     if args.noise_window_ms is not None:
         if not np.isfinite(args.noise_window_ms) or args.noise_window_ms <= 0:
             parser.error('noise window must be positive and finite')

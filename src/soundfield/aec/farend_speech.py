@@ -18,8 +18,11 @@ class FarendSpeechConfig:
     quiet_reduction_threshold_db: float = 20
     activation_frames: int = 1
     release_frames: int = 30
+    require_echo_for_double_talk: bool = False
 
     def __post_init__(self):
+        if not isinstance(self.require_echo_for_double_talk, bool):
+            raise ValueError('require_echo_for_double_talk must be boolean')
         for name in ('hop_length_samples', 'activation_frames', 'release_frames'):
             positive_integer(getattr(self, name), name)
         start, stop = self.frequency_band
@@ -70,13 +73,16 @@ class FarendSpeechDetector:
         reference_active = echo_level > config.echo_power_threshold
         level_threshold = config.active_residual_threshold if reference_active else config.quiet_residual_threshold
         reduction_threshold = config.active_reduction_threshold_db if reference_active else config.quiet_reduction_threshold_db
-        double_talk = residual_level > level_threshold and reduction < reduction_threshold
+        residual_voice = residual_level > level_threshold and reduction < reduction_threshold
+        double_talk = residual_voice
+        if config.require_echo_for_double_talk and not reference_active:
+            double_talk = False
         single_talk = reference_active and not double_talk
         if not self.is_farend_speech:
             self.active_frames = self.active_frames+1 if single_talk else 0
             if self.active_frames >= config.activation_frames:
                 self.is_farend_speech, self.active_frames = True, 0
-        elif double_talk:
+        elif residual_voice:
             self.is_farend_speech, self.quiet_frames = False, 0
         else:
             self.quiet_frames = 0 if single_talk else self.quiet_frames+1
