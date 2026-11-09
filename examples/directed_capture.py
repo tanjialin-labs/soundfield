@@ -19,15 +19,13 @@ def main():
     parser.add_argument('--directions', type=Path, required=True, help='NPY containing one scan index per frame')
     parser.add_argument('--spacing-meters', type=float, default=.03)
     parser.add_argument('--target-source', type=int, default=1)
-    parser.add_argument('--stages', type=Path)
     parser.add_argument("--competing-vote-fraction", type=float, default=0.)
     parser.add_argument("--inactive-gain", type=float, default=0.)
     parser.add_argument("--selective-attenuation", action="store_true", help="Use inter-microphone phase to protect speech outside the target sector")
     args = parser.parse_args()
     inputs = {path.resolve() for path in (args.input, args.beam_bank, args.directions)}
-    outputs = [path.resolve() for path in (args.output, args.stages) if path]
-    if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
-        parser.error('outputs must be distinct from input resources and each other')
+    if args.output.resolve() in inputs:
+        parser.error('output must differ from input resources')
     rate, audio = read_audio(args.input)
     bank = load_beam_bank(args.beam_bank, sample_rate_hz=rate)
     bins = bank.frequency_bin_count
@@ -40,8 +38,6 @@ def main():
         activity_config=SpatialActivityConfig(competing_vote_fraction=args.competing_vote_fraction,inactive_gain=args.inactive_gain),
         target_source_index=args.target_source, target_direction_indices=np.load(args.directions, allow_pickle=False))
     write_audio(args.output, result.audio, rate)
-    if args.stages:
-        np.savez_compressed(args.stages, **vars(result), sample_rate_hz=rate)
 
 
 if __name__ == '__main__':

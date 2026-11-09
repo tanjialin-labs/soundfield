@@ -26,7 +26,7 @@ def main():
     features.add_argument('--feature-audio', type=Path)
     features.add_argument('--separate-features', action='store_true')
     parser.add_argument('--evidence', type=Path, help='NPZ with frame_probability, bin_probability and statistical_gain')
-    parser.add_argument('--stages', type=Path)
+    parser.add_argument('--speech-evidence', type=Path, help='Write speech masks and selected channels for direction tracking')
     parser.add_argument('--no-gain-control', action='store_true')
     parser.add_argument('--gain-settings', type=Path)
     parser.add_argument('--no-spatial-filter', action='store_true')
@@ -34,7 +34,7 @@ def main():
     parser.add_argument('--per-channel-mask', action='store_true')
     args = parser.parse_args()
     inputs = {path.resolve() for path in (args.input, args.network, args.normalization, args.feature_audio, args.evidence, args.gain_settings) if path}
-    outputs = [path.resolve() for path in (args.output, args.stages) if path]
+    outputs = [path.resolve() for path in (args.output, args.speech_evidence) if path]
     if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
         parser.error('outputs must be distinct from each other and from input resources')
     rate, samples = read_audio(args.input)
@@ -76,8 +76,9 @@ def main():
         gain_config=config, synthesis_scale=32768/32767 if args.mode in ('fixed_direction', 'ambient') else 1.,
         enable_spatial_filter=not args.no_spatial_filter, spatial_config=spatial_config, ambient_shared_mask=not args.per_channel_mask, **evidence)
     write_audio(args.output, result.audio, rate)
-    if args.stages:
-        np.savez_compressed(args.stages, **vars(result), sample_rate_hz=rate)
+    if args.speech_evidence:
+        with args.speech_evidence.open("wb") as stream:
+            np.savez_compressed(stream, speech_masks=result.speech_masks, selected_channels=result.selected_channels)
 
 
 if __name__ == '__main__':

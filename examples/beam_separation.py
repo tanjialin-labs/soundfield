@@ -1,9 +1,7 @@
-"""Enhance fixed beams, separate sources and optionally save intermediate spectra."""
+"""Enhance fixed beams and separate their sources."""
 
 import argparse
 from pathlib import Path
-
-import numpy as np
 
 from soundfield.adaptive import NlmsConfig
 from soundfield.beamforming import SidelobeConfig
@@ -18,7 +16,6 @@ def main():
     parser.add_argument('input', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--beam-bank', type=Path, required=True)
-    parser.add_argument('--stages', type=Path)
     parser.add_argument('--postfilter', action='store_true')
     parser.add_argument('--postfilter-mask-exponent', type=float, default=1.,
                         help='output amplitude exponent for the separation mask when postfiltering')
@@ -26,9 +23,8 @@ def main():
     if not args.postfilter and args.postfilter_mask_exponent != 1.:
         parser.error('--postfilter-mask-exponent requires --postfilter')
     inputs = {args.input.resolve(), args.beam_bank.resolve()}
-    outputs = [args.output.resolve(), *([args.stages.resolve()] if args.stages else [])]
-    if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
-        parser.error('output paths must be distinct from each other and from input resources')
+    if args.output.resolve() in inputs:
+        parser.error('output must differ from input resources')
     rate, audio = read_audio(args.input)
     bank = load_beam_bank(args.beam_bank, sample_rate_hz=rate)
     bins = bank.frequency_bin_count
@@ -45,8 +41,6 @@ def main():
         if args.postfilter else None)
     result = separate_beams(audio, bank, enhancement, separation)
     write_audio(args.output, result.audio, rate)
-    if args.stages:
-        np.savez_compressed(args.stages, **vars(result), sample_rate_hz=rate, hop_length_samples=bins-1)
 
 
 if __name__ == '__main__':

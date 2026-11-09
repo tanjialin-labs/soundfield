@@ -1,7 +1,6 @@
 """Separate close speech using a symmetric array and explicit fixed beams."""
 import argparse
 from pathlib import Path
-import numpy as np
 from soundfield.adaptive import NlmsConfig
 from soundfield.beamforming import SidelobeConfig
 from soundfield.io import read_audio, write_audio, load_beam_bank
@@ -14,12 +13,10 @@ def main():
     parser.add_argument('input', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--beam-bank', type=Path, required=True)
-    parser.add_argument('--stages', type=Path)
     args = parser.parse_args()
     inputs = {args.input.resolve(), args.beam_bank.resolve()}
-    outputs = [path.resolve() for path in (args.output, args.stages) if path]
-    if any(path in inputs for path in outputs) or len(set(outputs)) != len(outputs):
-        parser.error('outputs must be distinct from input resources and each other')
+    if args.output.resolve() in inputs:
+        parser.error('output must differ from input resources')
     rate, audio = read_audio(args.input)
     bank = load_beam_bank(args.beam_bank, sample_rate_hz=rate)
     if rate != 16000 or audio.shape[1] != 8 or bank.beam_count != 5:
@@ -30,8 +27,6 @@ def main():
         nearfield_control=NearfieldControlConfig())
     result = capture_nearfield(audio, bank, enhancement, separation)
     write_audio(args.output, result.audio, rate)
-    if args.stages:
-        np.savez_compressed(args.stages, **vars(result), sample_rate_hz=rate)
 
 
 if __name__ == '__main__':
