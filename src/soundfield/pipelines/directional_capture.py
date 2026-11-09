@@ -35,7 +35,8 @@ def localize_speech(spectrum, speech_gains, selected_channels, matching_config, 
     if not 0 <= speech_bins[0] < speech_bins[1] <= bins:
         raise ValueError('speech_bins must fit the spectrum')
     matcher = DirectionalMatchingEstimator(matching_config)
-    tracker = SpeechGatedDirectionTracker(tracking_config, search_regions=regions, direction_count=directions)
+    tracker = SpeechGatedDirectionTracker(tracking_config, search_regions=regions, direction_count=directions,
+                                          circular_search=matching_config.circular_search)
     indices, angles = np.full(frames, -1, int), np.full(frames, np.nan)
     scores, counts = np.zeros((directions, frames)), np.zeros(frames, int)
     for frame in range(frames):
@@ -93,7 +94,12 @@ def capture_directed_region(audio, beam_bank, enhancement_config, separation_con
         if frame < frames:
             match = matcher.estimate(localization[:, frame], beam_activity=np.ones(len(matching_config.beam_intervals_degrees)))
             scores[:, frame] = match.direction_scores
-            region = slice(max(0, targets[frame]-half_width_steps), min(directions, targets[frame]+half_width_steps+1))
+            target_index = int(targets[frame])
+            offsets = np.arange(directions) - target_index
+            distances = np.abs(offsets)
+            if matching_config.circular_search:
+                distances = np.minimum(distances, directions - distances)
+            region = distances <= half_width_steps
             evidence[frame] = np.count_nonzero(np.sum(np.abs(match.bin_coefficients[:, :, region]), axis=(1, 2)))
         gain = gate.process_frame(float(evidence[frame]) if frame < frames else 0.)
         target = max(frame-delay, 0)
