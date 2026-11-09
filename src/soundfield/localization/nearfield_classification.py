@@ -122,19 +122,19 @@ class NearfieldSpatialClassifier:
         if self._frame_index % config.block_frames:
             return None
         output = self._history[:, :, config.output_microphone_indices].copy()
-        angle_results = np.empty(config.stop_bin - config.start_bin)
-        distance_results = np.empty_like(angle_results)
+        angle_results = np.full(config.stop_bin - config.start_bin, np.nan)
+        distance_results = np.full_like(angle_results, np.nan)
         accepted = 0
         channels = len(config.microphone_positions_meters)
         for offset, index in enumerate(range(config.start_bin, config.stop_bin)):
             samples = self._history[index].T
-            projector = np.zeros((channels, channels), complex)
-            if np.max(np.abs(samples)) > 0:
-                covariance = samples @ samples.conj().T / config.block_frames
-                diagonal = np.abs(np.diag(covariance))
-                covariance[np.diag_indices(channels)] = diagonal + 1e-5 * np.max(diagonal)
-                vectors = svd(covariance, lapack_driver="gesvd")[0][:, 1:]
-                projector = vectors @ vectors.conj().T
+            if not np.any(samples):
+                continue
+            covariance = samples @ samples.conj().T / config.block_frames
+            diagonal = np.abs(np.diag(covariance))
+            covariance[np.diag_indices(channels)] = diagonal + 1e-5 * np.max(diagonal)
+            vectors = svd(covariance, lapack_driver="gesvd")[0][:, 1:]
+            projector = vectors @ vectors.conj().T
             responses = self._responses[offset].reshape(channels, -1, order="F")
             denominator = np.sum(responses.conj() * (projector @ responses), axis=0) + 1e-8
             score = 1 / denominator
