@@ -17,13 +17,18 @@ class CorrelationSuppressionConfig:
     energy_start_bin: int = 19
     energy_stop_bin: int = 513
     absence_gain: float = .1
+    channel_model: str = "interference_reference"
 
     def __post_init__(self):
+        if self.channel_model not in ("interference_reference", "coherent_speech"):
+            raise ValueError("unknown channel_model")
         for name in ("frequency_bin_count", "channel_count", "energy_stop_bin"):
             positive_integer(getattr(self, name), name)
         nonnegative_integer(self.energy_start_bin, "energy_start_bin")
         if not self.energy_start_bin < self.energy_stop_bin <= self.frequency_bin_count:
             raise ValueError("energy band must fit the frequency bins")
+        if self.channel_model == "coherent_speech" and not 0 < self.correlation_memory < 1:
+            raise ValueError("coherent speech requires correlation_memory between zero and one, exclusively")
         for name in ("correlation_memory", "prior_memory", "absence_gain"):
             finite_scalar(getattr(self, name), name, minimum=0, maximum=1)
 
@@ -32,7 +37,8 @@ class CorrelationNoiseSuppressor:
     """Maintain independent statistics for each selected channel.
 
     Every call updates only channel_index, which is zero-based. The interference
-    estimate is the complex sum of the remaining channels. Output is (bins, 1).
+    estimate in reference mode is the complex sum of the remaining channels.
+    Coherent-speech mode retains components shared across microphones. Output is (bins, 1).
     """
 
     def __init__(self, config: CorrelationSuppressionConfig | None = None):
@@ -49,12 +55,17 @@ class CorrelationNoiseSuppressor:
 
     def reset(self):
         shape = (self.config.frequency_bin_count, self.config.channel_count)
-        self._cross_power = np.zeros(shape, dtype=np.complex128)
-        self._interference_power = np.zeros(shape)
-        self._prior_history = np.zeros(shape)
-        self._selected_energy = np.zeros(shape[1])
-        self._total_energy = np.zeros(shape[1])
         self._gains = np.ones(shape)
+        if self.config.channel_model == "coherent_speech":
+            pair_shape = (*shape, self.config.channel_count)
+            self._pair_cross = np.zeros(pair_shape, complex)
+            self._pair_power = np.zeros(pair_shape)
+        else:
+            self._cross_power = np.zeros(shape, dtype=np.complex128)
+            self._interference_power = np.zeros(shape)
+            self._prior_history = np.zeros(shape)
+            self._selected_energy = np.zeros(shape[1])
+            self._total_energy = np.zeros(shape[1])
 
     def process_frame(self, spectrum_frame, channel_index: int):
         config = self.config
@@ -62,6 +73,8 @@ class CorrelationNoiseSuppressor:
         nonnegative_integer(channel_index, "channel_index")
         if channel_index >= config.channel_count:
             raise ValueError("channel_index must identify an input channel")
+        if config.channel_model == "coherent_speech":
+            return self._coherent_output(spectrum, channel_index)
         combined = np.sum(spectrum, axis=1)
         selected = spectrum[:, channel_index]
         interference = combined - selected
@@ -95,3 +108,26 @@ class CorrelationNoiseSuppressor:
         self._total_energy[channel_index] = total_energy
         self._gains[:, channel_index] = gain
         return (gain * selected)[:, None]
+
+    def _coherent_output(self, spectrum, channel):
+        if self.config.channel_count == 1:
+            return spectrum.copy()
+        memory = self.config.correlation_memory
+        cross = self._pair_cross[:, channel]
+        power = self._pair_power[:, channel]
+        cross *= memory
+        cross += (1 - memory) * spectrum[:, channel:channel+1] * spectrum.conj()
+        power *= memory
+        power += (1 - memory) * np.abs(spectrum)**2
+        denominator = power[:, channel:channel+1] * power
+        coherence = np.divide(np.abs(cross)**2, denominator, out=np.zeros_like(power), where=denominator > 0)
+        coherence[:, channel] = 0
+        observed = denominator > 0
+        observed[:, channel] = False
+        count = observed.sum(axis=1)
+        shared = np.divide(coherence.sum(axis=1), count, out=np.ones(len(count)), where=count > 0)
+        bias = (1 - memory) / (1 + memory)
+        corrected = np.clip((shared - bias) / (2 * memory / (1 + memory)), 0, 1)
+        gain = self.config.absence_gain + (1 - self.config.absence_gain) * np.sqrt(corrected)
+        self._gains[:, channel] = gain
+        return spectrum[:, channel:channel+1] * gain[:, None]
