@@ -101,6 +101,13 @@ class DirectionalMatchingEstimator:
         self._dictionary = plane_wave_responses(config.geometry, frequency, config.scan_angles_degrees,
                                                 polar_angle_radians=config.polar_angle_radians,
                                                 propagation_sign=config.propagation_sign) / np.sqrt(config.geometry.microphone_count)
+        if config.phase_screening:
+            # The observation uses phase relative to the first microphone.
+            relative = self._dictionary[:, 1:] * self._dictionary[:, :1].conj()
+            cosine = relative.real * config.geometry.microphone_count
+            tolerance = 32 * np.finfo(float).eps
+            self._phase_minimum = cosine.min(axis=2)[:, None] - tolerance
+            self._phase_maximum = cosine.max(axis=2)[:, None] + tolerance
         self.reset()
 
     @property
@@ -160,8 +167,7 @@ class DirectionalMatchingEstimator:
             with np.errstate(divide="ignore", invalid="ignore"):
                 normalized = values / amplitude
                 phase = np.real(normalized[:, :, 1:] / normalized[:, :, :1])
-            bounds = np.real(self._dictionary[:, 1:]) * np.sqrt(config.geometry.microphone_count)
-            mask &= np.all((phase >= np.min(bounds, axis=2)[:, None]) & (phase <= np.max(bounds, axis=2)[:, None]), axis=2)
+            mask &= np.all((phase >= self._phase_minimum) & (phase <= self._phase_maximum), axis=2)
         coefficients = np.zeros((len(values), config.block_frames, len(config.scan_angles_degrees)), complex)
         for frequency in range(len(values)):
             valid = np.flatnonzero(mask[frequency])
